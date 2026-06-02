@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#ececec" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Ambient Orchestra</title>
+    <link rel="stylesheet" href="/src/styles/main.css" />
+  </head>
+  <body>
+    <canvas id="visualizer"></canvas>
+    <aside id="rail-left" class="rail rail-left" hidden>
+      <div class="rail-head"><span class="rail-title">Audio</span></div>
+      <div id="rail-left-data" class="rail-data"></div>
+      <div id="rail-left-knobs" class="rail-knobs"></div>
+    </aside>
+    <aside id="rail-right" class="rail rail-right" hidden>
+      <div class="rail-head"><span class="rail-title">Visual</span><span id="rail-right-toggle"></span></div>
+      <div id="rail-right-data" class="rail-data"></div>
+      <div id="rail-right-knobs" class="rail-knobs"></div>
+    </aside>
+    <div id="overlay" class="overlay">
+      <button id="start-btn" type="button">Click to begin</button>
+    </div>
+    <div id="error-overlay" class="error-overlay hidden">
+      <p id="error-message"></p>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

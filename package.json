@@ -1,0 +1,31 @@
+{
+  "name": "ambient-orchestra",
+  "version": "1.0.0",
+  "description": "Procedural ambient synth orchestra with particle visualizer",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "ambient",
+    "generative",
+    "tone.js"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "simplex-noise": "^4.0.3",
+    "three": "^0.184.0",
+    "tone": "^15.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/three": "^0.184.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
