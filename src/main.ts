@@ -87,10 +87,12 @@ function setMode(next: AppMode): void {
   mode = next;
   document.body.dataset.mode = next;
   storeMode(next);
+  controls.setMode(next);
 }
 
 const modeToggle = new ModeToggle(mode, setMode);
 modeToggleSlot.appendChild(modeToggle.element);
+controls.setMode(mode);
 
 let lastTime = performance.now();
 let running = false;

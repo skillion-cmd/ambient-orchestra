@@ -1,5 +1,6 @@
 import type { AppKnobs, HarmonicContext } from '../audio/types';
 import { DEFAULT_KNOBS } from '../audio/types';
+import type { AppMode } from './AppMode';
 import { Knob } from './Knob';
 import { KnobAutomator } from './KnobAutomator';
 
@@ -40,18 +41,33 @@ export class Controls {
   readonly visualElement: HTMLElement;
   private readonly automator = new KnobAutomator();
   private readonly bindings: KnobBinding[] = [];
+  private mode: AppMode = 'drift';
 
   constructor(private readonly onKnobsChange: (knobs: AppKnobs) => void) {
     this.audioElement = this.createGrid(AUDIO_KNOBS);
     this.visualElement = this.createGrid(VISUAL_KNOBS);
+    this.automator.setFullAuto(true);
   }
 
   getKnobs(): AppKnobs {
     return this.automator.getKnobs();
   }
 
-  /** Autonomous drift — call each frame while running */
+  setMode(mode: AppMode): void {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    if (mode === 'drift') {
+      // Resume drifting from wherever the user left the knobs.
+      this.automator.syncFromUser(this.automator.getKnobs());
+      this.automator.setFullAuto(true);
+    } else {
+      this.automator.setFullAuto(false);
+    }
+  }
+
+  /** Autonomous drift — call each frame while in Drift mode */
   update(dt: number, harmonic: HarmonicContext): void {
+    if (this.mode === 'calibrate') return;
     const userDragging = this.bindings.some((b) => b.knob.isDragging());
     const prev = this.automator.getKnobs();
     const next = this.automator.update(dt, harmonic, userDragging);

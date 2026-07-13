@@ -37,6 +37,12 @@ export class KnobAutomator {
   private barsUntilShift = 8;
   /** Sweep time-constant in seconds — gentle/quick/slow character per cluster. */
   private sweepTau = 10;
+  /** Drift mode: no user anchor to respect — roam the full clamp range. */
+  private fullAuto = false;
+
+  setFullAuto(fullAuto: boolean): void {
+    this.fullAuto = fullAuto;
+  }
 
   getKnobs(): AppKnobs {
     return {
@@ -106,7 +112,7 @@ export class KnobAutomator {
     // Coordinated cluster: 2–3 knobs move together in the same direction.
     const picks = this.pickKnobs(2 + Math.floor(Math.random() * 2));
     const phase = harmonic.movementPhase;
-    const orbit = 0.08;
+    const orbit = this.fullAuto ? 0.17 : 0.08;
     const dir = Math.random() < 0.5 ? -1 : 1;
 
     for (const pick of picks) {
@@ -114,6 +120,11 @@ export class KnobAutomator {
       if (pick.section === 'sound') {
         const key = pick.key as SoundKey;
         let base = this.anchors.sound[key] + span;
+        if (this.fullAuto) {
+          // Walk the anchor along so a session explores the whole range
+          // instead of orbiting the boot defaults forever.
+          this.anchors.sound[key] = clamp(lerp(this.anchors.sound[key], base, 0.35));
+        }
 
         if (key === 'activity' && (phase === 'bloom' || phase === 'gather')) base += 0.1;
         if (key === 'memory' && (phase === 'bloom' || phase === 'hang')) base += 0.12;
@@ -124,6 +135,9 @@ export class KnobAutomator {
       } else {
         const key = pick.key as VisualKey;
         let base = this.anchors.visual[key] + span;
+        if (this.fullAuto) {
+          this.anchors.visual[key] = clamp(lerp(this.anchors.visual[key], base, 0.35));
+        }
 
         if (key === 'ripple' && (phase === 'bloom' || harmonic.beatPulse > 0.5)) {
           base += 0.08;
@@ -150,6 +164,8 @@ export class KnobAutomator {
       { section: 'visual', key: 'drift' },
       { section: 'visual', key: 'focus' },
     ];
+    // Tempo only self-drives when the piece is fully autonomous.
+    if (this.fullAuto) all.push({ section: 'sound', key: 'pulse' });
     const shuffled = all.sort(() => Math.random() - 0.5);
     return shuffled.slice(0, count);
   }
