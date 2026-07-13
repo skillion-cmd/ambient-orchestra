@@ -1,5 +1,6 @@
 import type { AppKnobs, HarmonicContext } from '../audio/types';
 import { DEFAULT_KNOBS } from '../audio/types';
+import type { AppMode } from './AppMode';
 import { Knob } from './Knob';
 import { KnobAutomator } from './KnobAutomator';
 
@@ -17,13 +18,14 @@ interface KnobSpec {
   section: 'sound' | 'visual';
 }
 
+// Internal keys are engine plumbing; labels are the user-facing levers.
 const AUDIO_KNOBS: KnobSpec[] = [
-  { key: 'warmth', label: 'Warmth', left: 'Warm', right: 'Bright', section: 'sound' },
-  { key: 'space', label: 'Space', left: 'Intimate', right: 'Vast', section: 'sound' },
-  { key: 'activity', label: 'Activity', left: 'Still', right: 'Drifting', section: 'sound' },
-  { key: 'memory', label: 'Memory', left: 'New', right: 'Recall', section: 'sound' },
-  { key: 'entropy', label: 'Entropy', left: 'Stable', right: 'Morph', section: 'sound' },
-  { key: 'pulse', label: 'Pulse', left: 'Calm', right: 'Driving', section: 'sound' },
+  { key: 'pulse', label: 'Tempo', left: 'Slow', right: 'Fast', section: 'sound' },
+  { key: 'activity', label: 'Density', left: 'Sparse', right: 'Lush', section: 'sound' },
+  { key: 'memory', label: 'Melody', left: 'Texture', right: 'Tune', section: 'sound' },
+  { key: 'entropy', label: 'Variation', left: 'Settled', right: 'Wandering', section: 'sound' },
+  { key: 'warmth', label: 'Brightness', left: 'Dark', right: 'Bright', section: 'sound' },
+  { key: 'space', label: 'Space', left: 'Close', right: 'Cathedral', section: 'sound' },
 ];
 
 const VISUAL_KNOBS: KnobSpec[] = [
@@ -40,18 +42,52 @@ export class Controls {
   readonly visualElement: HTMLElement;
   private readonly automator = new KnobAutomator();
   private readonly bindings: KnobBinding[] = [];
+  private mode: AppMode = 'drift';
+  private readonly initialKnobs: AppKnobs;
 
-  constructor(private readonly onKnobsChange: (knobs: AppKnobs) => void) {
+  constructor(
+    private readonly onKnobsChange: (knobs: AppKnobs) => void,
+    initial?: AppKnobs,
+  ) {
+    this.initialKnobs = initial ?? DEFAULT_KNOBS;
     this.audioElement = this.createGrid(AUDIO_KNOBS);
     this.visualElement = this.createGrid(VISUAL_KNOBS);
+    if (initial) this.automator.setKnobs(initial);
+    this.automator.setFullAuto(true);
   }
 
   getKnobs(): AppKnobs {
     return this.automator.getKnobs();
   }
 
-  /** Autonomous drift — call each frame while running */
+  /** Seed widgets and engine from a stored calibration. */
+  setKnobs(knobs: AppKnobs): void {
+    for (const b of this.bindings) {
+      const val =
+        b.section === 'sound'
+          ? knobs.sound[b.key as keyof AppKnobs['sound']]
+          : knobs.visual[b.key as keyof AppKnobs['visual']];
+      b.knob.setValue(val);
+    }
+    this.automator.syncFromUser(knobs);
+    this.onKnobsChange(this.automator.getKnobs());
+  }
+
+  setMode(mode: AppMode): void {
+    if (mode === this.mode) return;
+    this.mode = mode;
+    if (mode === 'drift') {
+      // Resume drifting from wherever the user left the knobs.
+      this.automator.syncFromUser(this.automator.getKnobs());
+      this.automator.setFullAuto(true);
+    } else {
+      this.automator.setFullAuto(false);
+    }
+  }
+
+  /** Autonomous drift — call each frame while in Drift mode */
   update(dt: number, harmonic: HarmonicContext): void {
+    if (this.mode === 'calibrate') return;
     const userDragging = this.bindings.some((b) => b.knob.isDragging());
     const prev = this.automator.getKnobs();
     const next = this.automator.update(dt, harmonic, userDragging);
@@ -81,8 +117,8 @@ export class Controls {
     for (const item of items) {
       const initial =
         item.section === 'sound'
-          ? DEFAULT_KNOBS.sound[item.key as keyof AppKnobs['sound']]
-          : DEFAULT_KNOBS.visual[item.key as keyof AppKnobs['visual']];
+          ? this.initialKnobs.sound[item.key as keyof AppKnobs['sound']]
+          : this.initialKnobs.visual[item.key as keyof AppKnobs['visual']];
 
       const knob = new Knob(item.label, item.left, item.right, initial, (value) => {
         const current = this.automator.getKnobs();
