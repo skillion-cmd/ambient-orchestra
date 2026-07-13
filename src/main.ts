@@ -9,9 +9,14 @@ import { CymaticsOverlay } from './ui/CymaticsOverlay';
 import { VisualScope } from './ui/VisualScope';
 import { PerfMonitor } from './diagnostics/PerfMonitor';
 import { applyUiTheme, loadStoredTheme, storeTheme } from './visual/ScenePalette';
+import { loadStoredMode, storeMode, type AppMode } from './ui/AppMode';
+import { ModeToggle } from './ui/ModeToggle';
 
 const initialTheme = loadStoredTheme();
 applyUiTheme(initialTheme);
+
+let mode: AppMode = loadStoredMode();
+document.body.dataset.mode = mode;
 
 const canvas = document.getElementById('visualizer') as HTMLCanvasElement;
 const railLeft = document.getElementById('rail-left')!;
@@ -21,6 +26,7 @@ const leftKnobs = document.getElementById('rail-left-knobs')!;
 const rightData = document.getElementById('rail-right-data')!;
 const rightKnobs = document.getElementById('rail-right-knobs')!;
 const rightToggleSlot = document.getElementById('rail-right-toggle')!;
+const modeToggleSlot = document.getElementById('mode-toggle')!;
 const overlay = document.getElementById('overlay')!;
 const errorOverlay = document.getElementById('error-overlay')!;
 const errorMessage = document.getElementById('error-message')!;
@@ -76,6 +82,15 @@ const themeToggle = new ThemeToggle(initialTheme, (theme) => {
   visualScope.refreshTheme();
 });
 rightToggleSlot.appendChild(themeToggle.element);
+
+function setMode(next: AppMode): void {
+  mode = next;
+  document.body.dataset.mode = next;
+  storeMode(next);
+}
+
+const modeToggle = new ModeToggle(mode, setMode);
+modeToggleSlot.appendChild(modeToggle.element);
 
 let lastTime = performance.now();
 let running = false;
@@ -134,6 +149,7 @@ startBtn.addEventListener('click', async () => {
     overlay.classList.add('hidden');
     railLeft.hidden = false;
     railRight.hidden = false;
+    modeToggleSlot.hidden = false;
     cymaticsOverlay.show();
   } catch (err) {
     const msg =

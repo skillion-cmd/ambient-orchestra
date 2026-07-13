@@ -70,6 +70,54 @@ body {
   background: color-mix(in srgb, var(--ao-text) 8%, transparent);
 }
 
+.mode-toggle-slot {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+}
+
+.mode-toggle-slot[hidden] {
+  display: none;
+}
+
+.mode-toggle {
+  display: flex;
+  border: 1px solid color-mix(in srgb, var(--ao-text) 30%, transparent);
+  border-radius: 2px;
+  overflow: hidden;
+  backdrop-filter: blur(4px);
+}
+
+.mode-toggle button {
+  font-family: inherit;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border: none;
+  background: transparent;
+  color: var(--ao-text-faint);
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.mode-toggle button:hover {
+  color: var(--ao-text);
+  background: color-mix(in srgb, var(--ao-text) 8%, transparent);
+}
+
+.mode-toggle button.is-active {
+  color: var(--ao-text);
+  background: color-mix(in srgb, var(--ao-text) 14%, transparent);
+}
+
+/* Drift is hands-off: the control rails disappear, only the toggle stays. */
+body[data-mode='drift'] .rail {
+  display: none;
+}
+
 .perf-monitor {
   position: fixed;
   bottom: 8px;
