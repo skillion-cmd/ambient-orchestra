@@ -257,10 +257,15 @@ body[data-mode='drift'] .rail {
 .knob-range {
   display: flex;
   justify-content: space-between;
+  gap: 6px;
   width: 100%;
   font-size: 8px;
   color: var(--ao-text-faint);
   letter-spacing: 0.02em;
+}
+
+.knob-range span:last-child {
+  text-align: right;
 }
 
 .overlay {
