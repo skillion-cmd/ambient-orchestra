@@ -49,6 +49,14 @@ export abstract class VoiceBase {
   private pendingDisposeNodes: Tone.ToneAudioNode[] = [];
   private lastOutputLevel = -1;
   private lastFilterFreq = -1;
+  private panOffset = 0;
+  private currentWidth = 1;
+  private driftFrom = 0;
+  private driftTo = 0;
+  private driftDuration = 0;
+  private driftT = 0;
+  private driftSinceUpdate = 0;
+  private driftActive = false;
 
   constructor(
     readonly id: string,
@@ -86,13 +94,55 @@ export abstract class VoiceBase {
 
   /** Collapse toward mono (0) or spread wide (1.5). Ramped to avoid clicks. */
   setStereoWidth(width: number, rampSec = 2): void {
+    this.currentWidth = width;
+    this.applyPanPosition(rampSec);
+  }
+
+  /** Positional offset composed with basePan/width — pan drift and width
+   * automation both funnel through applyPanPosition so neither clobbers
+   * the other. */
+  setPanOffset(offset: number, rampSec = 0.15): void {
+    this.panOffset = offset;
+    this.applyPanPosition(rampSec);
+  }
+
+  private applyPanPosition(rampSec: number): void {
+    const pos = (this.basePan + this.panOffset) * this.currentWidth;
     if (this.spatial) {
       const node = this.panNode as Tone.Panner3D;
-      node.positionX.rampTo(this.basePan * 3 * width, rampSec);
+      node.positionX.rampTo(pos * 3, rampSec);
     } else {
       const node = this.panNode as Tone.Panner;
-      node.pan.rampTo(Math.max(-1, Math.min(1, this.basePan * width)), rampSec);
+      node.pan.rampTo(Math.max(-1, Math.min(1, pos)), rampSec);
     }
+  }
+
+  /** Begin a slow positional sweep — "swims past" for short-lived voices. */
+  protected startPanDrift(from: number, to: number, durationSec: number): void {
+    this.driftFrom = from;
+    this.driftTo = to;
+    this.driftDuration = Math.max(0.1, durationSec);
+    this.driftT = 0;
+    this.driftSinceUpdate = 0;
+    this.driftActive = true;
+    this.setPanOffset(from, 0.05);
+  }
+
+  /** Advance the pan sweep in small increments so width automation composes. */
+  protected tickPanDrift(dt: number): void {
+    if (!this.driftActive) return;
+    this.driftT += dt;
+    this.driftSinceUpdate += dt;
+    if (this.driftT >= this.driftDuration) {
+      this.driftActive = false;
+      this.setPanOffset(this.driftTo, 0.15);
+      return;
+    }
+    if (this.driftSinceUpdate < 0.12) return;
+    this.driftSinceUpdate = 0;
+    const t = this.driftT / this.driftDuration;
+    const eased = t * t * (3 - 2 * t);
+    this.setPanOffset(this.driftFrom + (this.driftTo - this.driftFrom) * eased, 0.15);
   }
 
   abstract onEnter(ctx: HarmonicContext): void;
