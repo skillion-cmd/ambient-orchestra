@@ -1,6 +1,31 @@
 import * as Tone from 'tone';
 import type { MovementPhase, SoundKnobs } from './types';
 
+/**
+ * Target BPM for a phase. Steady (Calibrate) mode trades the wide per-phase
+ * sway for a wider Tempo-knob range, so the knob reads as a direct lever.
+ */
+export function bpmFor(phase: MovementPhase, pulse: number, steady: boolean): number {
+  const base = steady ? 46 + pulse * 32 : 52 + pulse * 20;
+  const sway = steady ? 0.25 : 1;
+  switch (phase) {
+    case 'drift':
+      return base - 4 * sway;
+    case 'gather':
+      return base;
+    case 'bloom':
+      return base + 6 * sway;
+    case 'hang':
+      return base + 2 * sway;
+    case 'dissolve':
+      return base - 2 * sway;
+    case 'exhale':
+      return base - 6 * sway;
+    default:
+      return base;
+  }
+}
+
 export class MusicalClock {
   private lastBar = -1;
   private lastBeatInt = -1;
@@ -10,6 +35,8 @@ export class MusicalClock {
   currentBar = 0;
   subdivision = 0;
   beatPulse = 0;
+  /** Calibrate mode: tempo follows the knob, phases barely sway it. */
+  steadyTempo = false;
 
   init(): void {
     Tone.getTransport().bpm.value = 58;
@@ -18,7 +45,7 @@ export class MusicalClock {
 
   update(_dt: number, phase: MovementPhase, knobs: SoundKnobs): void {
     const pulseKnob = knobs.pulse ?? 0.5;
-    const targetBpm = this.bpmForPhase(phase, pulseKnob);
+    const targetBpm = bpmFor(phase, pulseKnob, this.steadyTempo);
     if (Math.abs(targetBpm - this.lastTargetBpm) > 0.25) {
       Tone.getTransport().bpm.rampTo(targetBpm, 2);
       this.lastTargetBpm = targetBpm;
@@ -64,23 +91,4 @@ export class MusicalClock {
     return beats * this.beatDurationSec();
   }
 
-  private bpmForPhase(phase: MovementPhase, pulse: number): number {
-    const base = 52 + pulse * 20;
-    switch (phase) {
-      case 'drift':
-        return base - 4;
-      case 'gather':
-        return base;
-      case 'bloom':
-        return base + 6;
-      case 'hang':
-        return base + 2;
-      case 'dissolve':
-        return base - 2;
-      case 'exhale':
-        return base - 6;
-      default:
-        return base;
-    }
-  }
 }

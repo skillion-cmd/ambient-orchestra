@@ -120,6 +120,11 @@ export class AudioEngine {
     this.applyKnobs(true);
   }
 
+  /** Calibrate steadies the tempo so the Tempo knob acts as a direct lever. */
+  setMode(mode: 'drift' | 'calibrate'): void {
+    this.conductor.clock.steadyTempo = mode === 'calibrate';
+  }
+
   /** Apply autonomous Conductor directives — call each frame while running. */
   applyDirectives(d: { masterIntensity: number; stereoWidth: number }): void {
     this.setMasterIntensity(d.masterIntensity);
@@ -177,7 +182,7 @@ export class AudioEngine {
       const t = Tone.now();
       this.delay.feedback.linearRampToValueAtTime(this.baseDelayFeedback, t + 1.5);
       this.reverb.wet.linearRampToValueAtTime(
-        0.32 + this.knobs.sound.space * 0.28,
+        0.2 + this.knobs.sound.space * 0.5,
         t + 1.8,
       );
       this.spaceThrowTimeout = null;
@@ -220,8 +225,8 @@ export class AudioEngine {
     this.tiltEQ.low.rampTo(-3 + warmth * 5, 1);
     this.tiltEQ.high.rampTo(3 - warmth * 5, 1);
 
-    this.reverb.wet.rampTo(0.32 + space * 0.28, 1);
-    this.delay.wet.rampTo(0.12 + space * 0.2 + pulse * 0.06, 1);
+    this.reverb.wet.rampTo(0.2 + space * 0.5, 1);
+    this.delay.wet.rampTo(0.08 + space * 0.26 + pulse * 0.06, 1);
     this.applyStereoWidth(1);
     this.chorus.wet.rampTo(0.28 + space * 0.22, 1);
 

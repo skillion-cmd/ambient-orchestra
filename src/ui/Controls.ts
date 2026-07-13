@@ -18,13 +18,14 @@ interface KnobSpec {
   section: 'sound' | 'visual';
 }
 
+// Internal keys are engine plumbing; labels are the user-facing levers.
 const AUDIO_KNOBS: KnobSpec[] = [
-  { key: 'warmth', label: 'Warmth', left: 'Warm', right: 'Bright', section: 'sound' },
-  { key: 'space', label: 'Space', left: 'Intimate', right: 'Vast', section: 'sound' },
-  { key: 'activity', label: 'Activity', left: 'Still', right: 'Drifting', section: 'sound' },
-  { key: 'memory', label: 'Memory', left: 'New', right: 'Recall', section: 'sound' },
-  { key: 'entropy', label: 'Entropy', left: 'Stable', right: 'Morph', section: 'sound' },
-  { key: 'pulse', label: 'Pulse', left: 'Calm', right: 'Driving', section: 'sound' },
+  { key: 'pulse', label: 'Tempo', left: 'Slow', right: 'Fast', section: 'sound' },
+  { key: 'activity', label: 'Density', left: 'Sparse', right: 'Lush', section: 'sound' },
+  { key: 'memory', label: 'Melody', left: 'Texture', right: 'Tune', section: 'sound' },
+  { key: 'entropy', label: 'Variation', left: 'Settled', right: 'Wandering', section: 'sound' },
+  { key: 'warmth', label: 'Brightness', left: 'Dark', right: 'Bright', section: 'sound' },
+  { key: 'space', label: 'Space', left: 'Close', right: 'Cathedral', section: 'sound' },
 ];
 
 const VISUAL_KNOBS: KnobSpec[] = [

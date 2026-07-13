@@ -88,11 +88,13 @@ function setMode(next: AppMode): void {
   document.body.dataset.mode = next;
   storeMode(next);
   controls.setMode(next);
+  audioEngine.setMode(next);
 }
 
 const modeToggle = new ModeToggle(mode, setMode);
 modeToggleSlot.appendChild(modeToggle.element);
 controls.setMode(mode);
+audioEngine.setMode(mode);
 
 let lastTime = performance.now();
 let running = false;

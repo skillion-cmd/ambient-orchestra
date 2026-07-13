@@ -149,7 +149,11 @@ export class Conductor {
     }
 
     const density = this.harmonicField.getMovementDensity();
-    const melodyPresence = this.harmonicField.getMelodyPresence();
+    // Melody knob scales phase-driven presence — neutral at the 0.45 default.
+    const melodyPresence = Math.min(
+      1,
+      this.harmonicField.getMelodyPresence() * (0.5 + this.knobs.memory * 1.1),
+    );
     this.targetInterest = 0.2 + density * 0.55 + this.knobs.activity * 0.15;
 
     const activity = this.knobs.activity;
@@ -447,7 +451,7 @@ export class Conductor {
     melodyPresence: number,
   ): void {
     const activeCount = this.voices.filter((v) => v.isActive()).length;
-    const maxVoices = Math.floor(4 + density * 7 + this.knobs.activity * 1.5);
+    const maxVoices = Math.floor(4 + density * 7 + this.knobs.activity * 3.5);
 
     if (activeCount >= maxVoices) {
       this.trimExcess(true);
@@ -548,7 +552,7 @@ export class Conductor {
   private trimExcess(force = false): void {
     const active = this.voices.filter((v) => v.isActive());
     const density = this.harmonicField.getMovementDensity();
-    const maxVoices = Math.floor(3 + density * 8 + this.knobs.activity * 1.5);
+    const maxVoices = Math.floor(3 + density * 8 + this.knobs.activity * 3.5);
 
     if (active.length <= 4) return;
     if (active.length <= maxVoices && !force) return;
