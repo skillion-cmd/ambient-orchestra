@@ -7,7 +7,7 @@ import {
   pickNextChord,
   pickPhraseType,
 } from './MusicTheory';
-import { Movement } from './Movement';
+import { Movement, pickMovementVariant } from './Movement';
 import type {
   ChordFunction,
   HarmonicContext,
@@ -181,7 +181,7 @@ export class HarmonicField {
       this.storedHook = [...this.melodyDegrees.slice(0, 4)];
     }
 
-    this.movement = new Movement(index);
+    this.movement = new Movement(index, pickMovementVariant(this.movement.variant));
     this.pendingRoot = this.pickNewRoot();
     this.pendingMode = this.pickNewMode();
     const initial = pickInitialChord(this.movement.phase);

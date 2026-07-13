@@ -31,7 +31,7 @@ export const VOICE_GROUPS: Record<VoiceGroup, readonly string[]> = {
   melody: ['dreamMelody', 'slowArp', 'tapeChoir', 'crystalCluster'],
   shimmer: ['glassPad', 'harmonicGhost', 'distantBell'],
   air: ['airTexture', 'roomTone', 'fieldRecording'],
-  foundation: ['subDrone'],
+  foundation: ['subDrone', 'deepPressure'],
   flurry: ['melodicFlurry', 'sparkRun'],
   clips: ['hymnClip', 'arpClip', 'phraseClip', 'textureClip', 'washClip'],
 };

@@ -24,7 +24,15 @@ const ENSEMBLE_VOICES = [
 const WHISPER_VOICES = ['distantBell', 'harmonicGhost'] as const;
 const RETURN_GROUPS: VoiceGroup[] = ['shimmer', 'air'];
 
-const CORE_IDS = new Set(['orchestraWhole', 'harmonyBed', 'warmPad', 'dreamMelody']);
+// deepPressure is protected because a sub vanishing mid-bloom is the one
+// dropout listeners notice; its lifecycle is managed by phase changes.
+const CORE_IDS = new Set([
+  'orchestraWhole',
+  'harmonyBed',
+  'warmPad',
+  'dreamMelody',
+  'deepPressure',
+]);
 
 function gaussianRandom(): number {
   let u = 0;
@@ -204,18 +212,7 @@ export class Conductor {
     if (flurryPhase && this.timeSinceFlurry >= this.nextFlurryIn) {
       this.maybeTriggerFlurry(ctx, density);
       this.timeSinceFlurry = 0;
-      // Cadence ebbs and flows within a movement: a 1.5-cycle wave over the
-      // movement progress clusters flourishes into dense and sparse sections,
-      // weighted by phase so bloom/hang feel busiest.
-      const sectionPulse = 0.5 + 0.5 * Math.sin(ctx.movementProgress * Math.PI * 3);
-      const phaseDrive =
-        ctx.movementPhase === 'bloom' || ctx.movementPhase === 'hang'
-          ? 1.4
-          : ctx.movementPhase === 'gather'
-            ? 1.1
-            : 0.7;
-      const flurryRate = phaseDrive * (0.55 + sectionPulse * 0.9);
-      this.nextFlurryIn = expRandom(14, 38) / ((0.6 + activity * 0.5) * flurryRate);
+      this.rescheduleFlurryTimer(ctx);
     }
 
     this.timeSinceSurprise += dt;
@@ -294,9 +291,27 @@ export class Conductor {
       }
     }
     this.surpriseFlash = Math.max(this.surpriseFlash, 0.45);
+    // A flurry riding the crossfade arrival marks the new harmony as an event.
+    if (Math.random() < 0.5) {
+      this.triggerCadenceFlurry(ctx);
+    }
   }
 
   private onPhraseCadence(ctx: HarmonicContext, type: MelodyPhraseType): void {
+    // Flurries land on the phrase turn so they read as commentary, not
+    // coincidence. Ladders (climbing phrases) are the most idiomatic moment.
+    if (ctx.movementPhase !== 'exhale') {
+      const activity = this.knobs.activity;
+      const flurryChance =
+        type === 'ladder'
+          ? 0.45 + activity * 0.2
+          : type === 'hook' || type === 'answer' || type === 'recall'
+            ? 0.22 + activity * 0.25
+            : 0;
+      if (Math.random() < flurryChance) {
+        this.triggerCadenceFlurry(ctx);
+      }
+    }
     if (type === 'recall' || type === 'hook' || type === 'answer') {
       this.triggerEnsemble(ctx, 0.35);
       this.surpriseFlash = Math.max(this.surpriseFlash, 0.55);
@@ -304,6 +319,14 @@ export class Conductor {
     } else if (type === 'drift') {
       this.fx.triggerThinMix(1.1);
     }
+  }
+
+  /** Cadence-placed flurry: the outer roll already decided, so chance 1;
+   * restarting the ambient timer prevents back-to-back double-fires. */
+  private triggerCadenceFlurry(ctx: HarmonicContext): void {
+    this.maybeTriggerFlurry(ctx, this.harmonicField.getMovementDensity(), 1);
+    this.timeSinceFlurry = 0;
+    this.rescheduleFlurryTimer(ctx);
   }
 
   private triggerFoundationAnchor(ctx: HarmonicContext): void {
@@ -358,8 +381,28 @@ export class Conductor {
     }
   }
 
-  private maybeTriggerFlurry(ctx: HarmonicContext, density: number): void {
-    if (Math.random() > 0.78 + density * 0.2) return;
+  /** Cadence ebbs and flows within a movement: a 1.5-cycle wave over the
+   * movement progress clusters flourishes into dense and sparse sections,
+   * weighted by phase so bloom/hang feel busiest. */
+  private rescheduleFlurryTimer(ctx: HarmonicContext): void {
+    const sectionPulse = 0.5 + 0.5 * Math.sin(ctx.movementProgress * Math.PI * 3);
+    const phaseDrive =
+      ctx.movementPhase === 'bloom' || ctx.movementPhase === 'hang'
+        ? 1.4
+        : ctx.movementPhase === 'gather'
+          ? 1.1
+          : 0.7;
+    const flurryRate = phaseDrive * (0.55 + sectionPulse * 0.9);
+    this.nextFlurryIn =
+      expRandom(14, 38) / ((0.6 + this.knobs.activity * 0.5) * flurryRate);
+  }
+
+  private maybeTriggerFlurry(
+    ctx: HarmonicContext,
+    density: number,
+    chance = 0.78 + density * 0.2,
+  ): void {
+    if (Math.random() > chance) return;
 
     const pick = Math.random() < 0.55 ? 'melodicFlurry' : 'sparkRun';
     const voice = this.voices.find((v) => v.id === pick);
@@ -407,6 +450,11 @@ export class Conductor {
         this.activateGroup('shimmer', ctx);
         this.triggerEnsemble(ctx, 0.85);
         this.activateVoice('rhythmicPulse', ctx);
+        // Underwater pressure under the crest — warmth-tied so the
+        // Brightness lever also decides how often blooms carry weight.
+        if (Math.random() < 0.5 + this.knobs.warmth * 0.35) {
+          this.activateVoice('deepPressure', ctx);
+        }
         if (Math.random() < 0.4) this.triggerVisualSpaceThrow(3.5);
         break;
       case 'hang':
@@ -420,6 +468,7 @@ export class Conductor {
         this.fadeGroup('air');
         this.fadeGroup('flurry');
         this.voices.find((v) => v.id === 'rhythmicPulse')?.exit();
+        this.voices.find((v) => v.id === 'deepPressure')?.exit();
         this.activateVoice('granularTexture', ctx);
         if (Math.random() < 0.4 + this.knobs.entropy * 0.3) {
           this.activateFromGroup('clips', ctx);
@@ -434,6 +483,8 @@ export class Conductor {
         this.fadeGroup('shimmer');
         this.fadeGroup('flurry');
         this.fadeGroup('clips');
+        // Safety net when dissolve was skipped over; exit is idempotent.
+        this.voices.find((v) => v.id === 'deepPressure')?.exit();
         this.fx.triggerExhaleVacuum();
         setTimeout(() => {
           const c = this.getHarmonicContext();
