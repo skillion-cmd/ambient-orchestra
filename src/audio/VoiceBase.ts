@@ -8,6 +8,7 @@ const VOICE_PANS: Record<string, number> = {
   warmPad: -0.38,
   modalStrings: 0.42,
   subDrone: 0,
+  deepPressure: 0,
   dreamMelody: -0.22,
   tapeChoir: 0.28,
   glassPad: 0.55,

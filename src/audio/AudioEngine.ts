@@ -9,6 +9,7 @@ export class AudioEngine {
   private readonly padBus: Tone.Gain;
   private readonly melodyBus: Tone.Gain;
   private readonly airBus: Tone.Gain;
+  private readonly subBus: Tone.Gain;
   private readonly masterBus: Tone.Gain;
   private readonly intensityGain: Tone.Gain;
   private readonly glue: Tone.Compressor;
@@ -79,7 +80,15 @@ export class AudioEngine {
     this.limiter.connect(this.analyser);
     this.analyser.toDestination();
 
-    this.voices = createAllVoices(this.padBus, this.melodyBus, this.airBus);
+    // Dry sub path: joins at the tilt EQ, bypassing the 90Hz highpass (which
+    // would kill true sub), the 14s reverb/delay (mud), the chorus, and the
+    // glue compressor (a sub must not pump the mix). Still hits the warmth
+    // tilt, the limiter, and the analyser so the visualizer's bass band
+    // sees the pressure.
+    this.subBus = new Tone.Gain(0.5);
+    this.subBus.connect(this.tiltEQ);
+
+    this.voices = createAllVoices(this.padBus, this.melodyBus, this.airBus, this.subBus);
 
     const fx: ConductorFx = {
       triggerPreEnsembleInhale: () => this.triggerPreEnsembleInhale(),

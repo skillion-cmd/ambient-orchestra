@@ -186,6 +186,51 @@ export class SubDrone extends VoiceBase {
   }
 }
 
+/** Underwater pressure — a true-sub root sine (36-58Hz) on the dry subBus
+ * with a tidal amplitude swell. Felt more than heard; enters on bloom. */
+export class DeepPressure extends VoiceBase {
+  private osc: Tone.Oscillator | null = null;
+  private lfo: Tone.LFO | null = null;
+  private swellGain: Tone.Gain | null = null;
+
+  constructor(dest: Bus) {
+    super('deepPressure', dest, 0.12);
+    this.fadeSpeed = 0.0004;
+  }
+
+  onEnter(ctx: HarmonicContext): void {
+    this.clearPendingDispose();
+    // Swell lives on an inner gain — VoiceBase owns output.gain every frame.
+    this.swellGain = new Tone.Gain(0.4).connect(this.output);
+    this.lfo = new Tone.LFO({
+      frequency: 0.025 + Math.random() * 0.015,
+      min: 0.22,
+      max: 1,
+      phase: 270,
+    });
+    this.lfo.connect(this.swellGain.gain).start();
+    this.osc = new Tone.Oscillator(this.freqFromDegree(0, ctx, -1), 'sine')
+      .connect(this.swellGain)
+      .start();
+  }
+
+  onHarmonicShift(ctx: HarmonicContext): void {
+    this.osc?.frequency.rampTo(this.freqFromDegree(0, ctx, -1), 25);
+  }
+
+  onUpdate(): void {}
+
+  onExit(): void {
+    this.clearPendingDispose();
+    this.osc?.stop().dispose();
+    this.lfo?.stop().dispose();
+    this.swellGain?.dispose();
+    this.osc = null;
+    this.lfo = null;
+    this.swellGain = null;
+  }
+}
+
 export class WarmPad extends VoiceBase {
   private synth: Tone.PolySynth<Tone.MonoSynth> | null = null;
   private filter: Tone.Filter | null = null;
@@ -967,12 +1012,14 @@ export function createAllVoices(
   padBus: Bus,
   melodyBus: Bus,
   airBus: Bus,
+  subBus: Bus,
 ): VoiceBase[] {
   return [
     new OrchestraWhole(padBus),
     new HarmonyBed(padBus),
     new DreamMelody(melodyBus),
     new SubDrone(padBus),
+    new DeepPressure(subBus),
     new WarmPad(padBus),
     new GlassPad(melodyBus),
     new AirTexture(airBus),
