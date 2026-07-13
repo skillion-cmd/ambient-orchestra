@@ -9,7 +9,7 @@ import { CymaticsOverlay } from './ui/CymaticsOverlay';
 import { VisualScope } from './ui/VisualScope';
 import { PerfMonitor } from './diagnostics/PerfMonitor';
 import { applyUiTheme, loadStoredTheme, storeTheme } from './visual/ScenePalette';
-import { loadStoredMode, storeMode, type AppMode } from './ui/AppMode';
+import { loadStoredKnobs, loadStoredMode, storeKnobs, storeMode, type AppMode } from './ui/AppMode';
 import { ModeToggle } from './ui/ModeToggle';
 
 const initialTheme = loadStoredTheme();
@@ -57,9 +57,16 @@ let lastArt: ArtDirectorDirectives = {
   constellationTrigger: false,
 };
 
+let knobSaveTimeout: ReturnType<typeof setTimeout> | null = null;
 const controls = new Controls((knobs) => {
   audioEngine.setKnobs(knobs);
-});
+  // Only a deliberate calibration is worth remembering — Drift churns values.
+  if (mode === 'calibrate') {
+    if (knobSaveTimeout) clearTimeout(knobSaveTimeout);
+    knobSaveTimeout = setTimeout(() => storeKnobs(controls.getKnobs()), 500);
+  }
+}, loadStoredKnobs() ?? undefined);
+audioEngine.setKnobs(controls.getKnobs());
 
 // ——— Left rail: audio ———
 const sessionReadout = new SessionReadout(
@@ -89,6 +96,11 @@ function setMode(next: AppMode): void {
   storeMode(next);
   controls.setMode(next);
   audioEngine.setMode(next);
+  if (next === 'calibrate') {
+    // A calibration survives a Drift excursion.
+    const stored = loadStoredKnobs();
+    if (stored) controls.setKnobs(stored);
+  }
 }
 
 const modeToggle = new ModeToggle(mode, setMode);
