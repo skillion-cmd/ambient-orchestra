@@ -7,13 +7,14 @@ import { VoiceBase } from '../VoiceBase';
 
 type Bus = Tone.ToneAudioNode;
 
-/** Rich stacked chord bed — the harmonic foundation */
+/** Rich stacked chord bed — the harmonic foundation. Detuned saw ensemble
+ * with a per-note filter swell for a bowed-string character. */
 export class HarmonyBed extends VoiceBase {
-  private synth: Tone.PolySynth | null = null;
+  private synth: Tone.PolySynth<Tone.MonoSynth> | null = null;
   private filter: Tone.Filter | null = null;
 
   constructor(dest: Bus) {
-    super('harmonyBed', dest, 0.24);
+    super('harmonyBed', dest, 0.19);
     this.fadeSpeed = 0.008;
     this.respondsToEnsemble = true;
   }
@@ -21,16 +22,25 @@ export class HarmonyBed extends VoiceBase {
   onEnter(ctx: HarmonicContext): void {
     this.clearPendingDispose();
     this.filter = new Tone.Filter(1100, 'lowpass').connect(this.output);
-    this.synth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: 'fatsine', spread: 14, count: 3 },
-      envelope: { attack: 5, decay: 3, sustain: 0.75, release: 18 },
+    this.synth = new Tone.PolySynth(Tone.MonoSynth, {
+      oscillator: { type: 'fatsawtooth', spread: 26, count: 3 },
+      envelope: { attack: 6, decay: 3, sustain: 0.75, release: 18 },
+      filter: { type: 'lowpass', rolloff: -12, Q: 1 },
+      filterEnvelope: {
+        attack: 5,
+        decay: 6,
+        sustain: 0.55,
+        release: 14,
+        baseFrequency: 220,
+        octaves: 2.8,
+      },
     }).connect(this.filter);
     this.synth.maxPolyphony = 8;
     const notes = [
       ...this.getChordNotes(ctx, 0),
       ...this.getChordNotes(ctx, 1),
     ];
-    this.synth.triggerAttack(notes, Tone.now(), 0.22);
+    this.synth.triggerAttack(notes, Tone.now(), 0.13);
   }
 
   onHarmonicShift(ctx: HarmonicContext): void {
@@ -40,15 +50,15 @@ export class HarmonyBed extends VoiceBase {
       ...this.getChordNotes(ctx, 1),
     ];
     this.synth.releaseAll();
-    this.synth.triggerAttack(notes, Tone.now() + 0.5, 0.18);
+    this.synth.triggerAttack(notes, Tone.now() + 0.5, 0.11);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
-    this.ensembleAttack(this.synth, this.getChordNotes(ctx, 1), 0.1);
+    this.ensembleAttack(this.synth, this.getChordNotes(ctx, 1), 0.06);
   }
 
   onUpdate(_dt: number, _interest: number, knobs: SoundKnobs): void {
-    this.rampFilter(this.filter, 600 + knobs.warmth * 1400, 3);
+    this.rampFilter(this.filter, 500 + knobs.warmth * 2200, 3);
   }
 
   onExit(): void {
@@ -177,38 +187,47 @@ export class SubDrone extends VoiceBase {
 }
 
 export class WarmPad extends VoiceBase {
-  private synth: Tone.PolySynth | null = null;
+  private synth: Tone.PolySynth<Tone.MonoSynth> | null = null;
   private filter: Tone.Filter | null = null;
 
   constructor(dest: Bus) {
-    super('warmPad', dest, 0.2);
+    super('warmPad', dest, 0.16);
     this.respondsToEnsemble = true;
   }
 
   onEnter(ctx: HarmonicContext): void {
     this.clearPendingDispose();
     this.filter = new Tone.Filter(900, 'lowpass').connect(this.output);
-    this.synth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: 'fatsine', spread: 20, count: 4 },
-      envelope: { attack: 3.5, decay: 2, sustain: 0.72, release: 14 },
+    this.synth = new Tone.PolySynth(Tone.MonoSynth, {
+      oscillator: { type: 'fatsawtooth', spread: 22, count: 3 },
+      envelope: { attack: 4.5, decay: 2, sustain: 0.72, release: 14 },
+      filter: { type: 'lowpass', rolloff: -12, Q: 1 },
+      filterEnvelope: {
+        attack: 4,
+        decay: 5,
+        sustain: 0.5,
+        release: 12,
+        baseFrequency: 180,
+        octaves: 2.4,
+      },
     }).connect(this.filter);
     this.synth.maxPolyphony = 6;
     const notes = this.getChordNotes(ctx, 0);
-    this.synth.triggerAttack(notes, Tone.now(), 0.26);
+    this.synth.triggerAttack(notes, Tone.now(), 0.15);
   }
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
     this.synth.releaseAll();
-    this.synth.triggerAttack(this.getChordNotes(ctx, 0), Tone.now() + 1, 0.2);
+    this.synth.triggerAttack(this.getChordNotes(ctx, 0), Tone.now() + 1, 0.12);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
-    this.ensembleAttack(this.synth, this.getChordNotes(ctx, 0), 0.14);
+    this.ensembleAttack(this.synth, this.getChordNotes(ctx, 0), 0.08);
   }
 
   onUpdate(_dt: number, _interest: number, knobs: SoundKnobs): void {
-    this.rampFilter(this.filter, 550 + knobs.warmth * 1000, 2);
+    this.rampFilter(this.filter, 450 + knobs.warmth * 1600, 2);
   }
 
   onExit(): void {
@@ -312,27 +331,38 @@ export class DistantBell extends VoiceBase {
 }
 
 export class TapeChoir extends VoiceBase {
-  private synth: Tone.PolySynth | null = null;
+  private synth: Tone.PolySynth<Tone.MonoSynth> | null = null;
+  private filter: Tone.Filter | null = null;
   private wobblePhase = 0;
   private lastDetune = 0;
 
   constructor(dest: Bus) {
-    super('tapeChoir', dest, 0.17);
+    super('tapeChoir', dest, 0.14);
     this.respondsToEnsemble = true;
   }
 
   onEnter(ctx: HarmonicContext): void {
     this.clearPendingDispose();
-    this.synth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: 'fatsine', spread: 16, count: 3 },
-      envelope: { attack: 4, decay: 2, sustain: 0.65, release: 16 },
-    }).connect(this.output);
+    this.filter = new Tone.Filter(1300, 'lowpass').connect(this.output);
+    this.synth = new Tone.PolySynth(Tone.MonoSynth, {
+      oscillator: { type: 'fatsawtooth', spread: 18, count: 3 },
+      envelope: { attack: 5, decay: 2, sustain: 0.65, release: 16 },
+      filter: { type: 'lowpass', rolloff: -12, Q: 1 },
+      filterEnvelope: {
+        attack: 4.5,
+        decay: 5,
+        sustain: 0.55,
+        release: 13,
+        baseFrequency: 260,
+        octaves: 2.6,
+      },
+    }).connect(this.filter);
     this.synth.maxPolyphony = 6;
     const notes = [
       ...ctx.chordDegrees.slice(0, 3).map((d) => this.noteAt(ctx, d, 0)),
       this.getMelodyNote(ctx, 1),
     ];
-    this.synth.triggerAttack(notes, Tone.now(), 0.22);
+    this.synth.triggerAttack(notes, Tone.now(), 0.13);
   }
 
   onHarmonicShift(ctx: HarmonicContext): void {
@@ -342,16 +372,17 @@ export class TapeChoir extends VoiceBase {
       ...ctx.chordDegrees.slice(0, 3).map((d) => this.noteAt(ctx, d, 0)),
       this.getMelodyNote(ctx, 1),
     ];
-    this.synth.triggerAttack(notes, Tone.now() + 1.2, 0.18);
+    this.synth.triggerAttack(notes, Tone.now() + 1.2, 0.11);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
     const notes = ctx.chordDegrees.slice(0, 2).map((d) => this.noteAt(ctx, d, 0));
-    this.ensembleAttack(this.synth, notes, 0.11);
+    this.ensembleAttack(this.synth, notes, 0.07);
   }
 
   onUpdate(dt: number, _interest: number, knobs: SoundKnobs): void {
     if (!this.synth) return;
+    this.rampFilter(this.filter, 500 + knobs.warmth * 1600, 2);
     this.wobblePhase += dt * 0.05 * Math.PI * 2;
     const entropyWobble = knobs.entropy * 10;
     const detune = Math.sin(this.wobblePhase) * (6 + entropyWobble);
@@ -363,8 +394,10 @@ export class TapeChoir extends VoiceBase {
 
   onExit(): void {
     const synth = this.synth;
-    this.releaseAndDispose(synth, 16);
+    const filter = this.filter;
+    this.releaseAndDispose(synth, 16, filter);
     this.synth = null;
+    this.filter = null;
   }
 }
 
@@ -612,11 +645,11 @@ export class FieldRecording extends VoiceBase {
 }
 
 export class OrchestraWhole extends VoiceBase {
-  private synth: Tone.PolySynth | null = null;
+  private synth: Tone.PolySynth<Tone.MonoSynth> | null = null;
   private filter: Tone.Filter | null = null;
 
   constructor(dest: Bus) {
-    super('orchestraWhole', dest, 0.2);
+    super('orchestraWhole', dest, 0.16);
     this.fadeSpeed = 0.007;
     this.respondsToEnsemble = true;
   }
@@ -624,9 +657,18 @@ export class OrchestraWhole extends VoiceBase {
   onEnter(ctx: HarmonicContext): void {
     this.clearPendingDispose();
     this.filter = new Tone.Filter(1300, 'lowpass').connect(this.output);
-    this.synth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: 'fatsine', spread: 22, count: 4 },
-      envelope: { attack: 5, decay: 2, sustain: 0.8, release: 20 },
+    this.synth = new Tone.PolySynth(Tone.MonoSynth, {
+      oscillator: { type: 'fatsawtooth', spread: 30, count: 3 },
+      envelope: { attack: 6, decay: 2, sustain: 0.8, release: 20 },
+      filter: { type: 'lowpass', rolloff: -12, Q: 1 },
+      filterEnvelope: {
+        attack: 5.5,
+        decay: 6,
+        sustain: 0.55,
+        release: 16,
+        baseFrequency: 200,
+        octaves: 3.0,
+      },
     }).connect(this.filter);
     this.synth.maxPolyphony = 10;
     const notes = [
@@ -634,7 +676,7 @@ export class OrchestraWhole extends VoiceBase {
       ...this.getChordNotes(ctx, 0),
       ...this.getChordNotes(ctx, 1),
     ];
-    this.synth.triggerAttack(notes, Tone.now(), 0.2);
+    this.synth.triggerAttack(notes, Tone.now(), 0.12);
   }
 
   onHarmonicShift(ctx: HarmonicContext): void {
@@ -644,16 +686,16 @@ export class OrchestraWhole extends VoiceBase {
       ...this.getChordNotes(ctx, 0),
       ...this.getChordNotes(ctx, 1),
     ];
-    this.synth.triggerAttack(notes, Tone.now() + 2, 0.16);
+    this.synth.triggerAttack(notes, Tone.now() + 2, 0.1);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
     const notes = [...this.getChordNotes(ctx, 0), this.getMelodyNote(ctx, 1)];
-    this.ensembleAttack(this.synth, notes, 0.15);
+    this.ensembleAttack(this.synth, notes, 0.09);
   }
 
   onUpdate(_dt: number, _interest: number, knobs: SoundKnobs): void {
-    this.rampFilter(this.filter, 700 + knobs.warmth * 1600, 3);
+    this.rampFilter(this.filter, 550 + knobs.warmth * 2400, 3);
   }
 
   onExit(): void {

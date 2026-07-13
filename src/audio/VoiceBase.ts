@@ -269,7 +269,10 @@ export abstract class VoiceBase {
 
   /** Re-articulate poly synth without stacking voices — prevents polyphony blowout */
   protected ensembleAttack(
-    synth: Tone.PolySynth | null,
+    synth: {
+      releaseAll(time?: Tone.Unit.Time): unknown;
+      triggerAttack(notes: string[], time?: Tone.Unit.Time, velocity?: number): unknown;
+    } | null,
     notes: string[],
     velocity: number,
   ): void {
