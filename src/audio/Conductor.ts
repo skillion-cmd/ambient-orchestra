@@ -24,7 +24,15 @@ const ENSEMBLE_VOICES = [
 const WHISPER_VOICES = ['distantBell', 'harmonicGhost'] as const;
 const RETURN_GROUPS: VoiceGroup[] = ['shimmer', 'air'];
 
-const CORE_IDS = new Set(['orchestraWhole', 'harmonyBed', 'warmPad', 'dreamMelody']);
+// deepPressure is protected because a sub vanishing mid-bloom is the one
+// dropout listeners notice; its lifecycle is managed by phase changes.
+const CORE_IDS = new Set([
+  'orchestraWhole',
+  'harmonyBed',
+  'warmPad',
+  'dreamMelody',
+  'deepPressure',
+]);
 
 function gaussianRandom(): number {
   let u = 0;
@@ -442,6 +450,11 @@ export class Conductor {
         this.activateGroup('shimmer', ctx);
         this.triggerEnsemble(ctx, 0.85);
         this.activateVoice('rhythmicPulse', ctx);
+        // Underwater pressure under the crest — warmth-tied so the
+        // Brightness lever also decides how often blooms carry weight.
+        if (Math.random() < 0.5 + this.knobs.warmth * 0.35) {
+          this.activateVoice('deepPressure', ctx);
+        }
         if (Math.random() < 0.4) this.triggerVisualSpaceThrow(3.5);
         break;
       case 'hang':
@@ -455,6 +468,7 @@ export class Conductor {
         this.fadeGroup('air');
         this.fadeGroup('flurry');
         this.voices.find((v) => v.id === 'rhythmicPulse')?.exit();
+        this.voices.find((v) => v.id === 'deepPressure')?.exit();
         this.activateVoice('granularTexture', ctx);
         if (Math.random() < 0.4 + this.knobs.entropy * 0.3) {
           this.activateFromGroup('clips', ctx);
@@ -469,6 +483,8 @@ export class Conductor {
         this.fadeGroup('shimmer');
         this.fadeGroup('flurry');
         this.fadeGroup('clips');
+        // Safety net when dissolve was skipped over; exit is idempotent.
+        this.voices.find((v) => v.id === 'deepPressure')?.exit();
         this.fx.triggerExhaleVacuum();
         setTimeout(() => {
           const c = this.getHarmonicContext();
