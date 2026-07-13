@@ -732,10 +732,19 @@ export class MelodicFlurry extends VoiceBase {
     this.runLength = 8 + Math.floor(Math.random() * 7);
     this.stepInterval = 0.11 + Math.random() * 0.07;
     this.done = false;
+    // Swim across the field: enter one side, cross past center, keep
+    // moving through the release tail.
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    this.startPanDrift(
+      dir * (0.45 + Math.random() * 0.35),
+      -dir * (0.55 + Math.random() * 0.45),
+      this.runLength * this.stepInterval + 1.2,
+    );
     this.playStep(ctx);
   }
 
   onUpdate(dt: number): void {
+    this.tickPanDrift(dt);
     if (this.state === 'fadingOut') {
       this.done = true;
       return;
@@ -797,10 +806,17 @@ export class SparkRun extends VoiceBase {
     }).connect(this.output);
     this.runIndex = 0;
     this.done = false;
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    this.startPanDrift(
+      dir * (0.5 + Math.random() * 0.3),
+      -dir * (0.6 + Math.random() * 0.4),
+      1.8,
+    );
     this.playStep(ctx);
   }
 
   onUpdate(dt: number): void {
+    this.tickPanDrift(dt);
     if (this.state === 'fadingOut') {
       this.done = true;
       return;
