@@ -21,6 +21,7 @@ export class AudioEngine {
   private readonly highpass: Tone.Filter;
   private readonly analyser: Tone.Analyser;
   private readonly limiter: Tone.Limiter;
+  private readonly subLimiter: Tone.Limiter;
   private readonly voices;
   readonly conductor: Conductor;
   private knobs: AppKnobs = {
@@ -31,7 +32,7 @@ export class AudioEngine {
   private lastAppliedSound = { ...DEFAULT_KNOBS.sound };
   private featureFrame = 0;
   private cachedFeatures: AudioFeatures = { bass: 0, mids: 0, highs: 0, overall: 0 };
-  private readonly baseMasterGain = 0.72;
+  private readonly baseMasterGain = 0.8;
   private readonly baseDelayFeedback = 0.22;
   private readonly baseReverbWet = 0.42;
   private spaceThrowTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -42,8 +43,8 @@ export class AudioEngine {
   private readonly baseWidth = 0.55;
 
   constructor() {
-    this.padBus = new Tone.Gain(0.85);
-    this.melodyBus = new Tone.Gain(0.75);
+    this.padBus = new Tone.Gain(0.72);
+    this.melodyBus = new Tone.Gain(0.68);
     this.airBus = new Tone.Gain(0.35);
     this.masterBus = new Tone.Gain(this.baseMasterGain);
     this.intensityGain = new Tone.Gain(1);
@@ -82,11 +83,14 @@ export class AudioEngine {
 
     // Dry sub path: joins at the tilt EQ, bypassing the 90Hz highpass (which
     // would kill true sub), the 14s reverb/delay (mud), the chorus, and the
-    // glue compressor (a sub must not pump the mix). Still hits the warmth
-    // tilt, the limiter, and the analyser so the visualizer's bass band
-    // sees the pressure.
-    this.subBus = new Tone.Gain(0.5);
-    this.subBus.connect(this.tiltEQ);
+    // glue compressor (a sub must not pump the mix). Its own limiter keeps a
+    // swelling sub from eating the master limiter's headroom on behalf of
+    // the whole mix. Still hits the warmth tilt, the master limiter, and the
+    // analyser so the visualizer's bass band sees the pressure.
+    this.subBus = new Tone.Gain(0.42);
+    this.subLimiter = new Tone.Limiter(-8);
+    this.subBus.connect(this.subLimiter);
+    this.subLimiter.connect(this.tiltEQ);
 
     this.voices = createAllVoices(this.padBus, this.melodyBus, this.airBus, this.subBus);
 
@@ -239,8 +243,8 @@ export class AudioEngine {
     this.applyStereoWidth(1);
     this.chorus.wet.rampTo(0.28 + space * 0.22, 1);
 
-    this.melodyBus.gain.rampTo(0.68 + (1 - space) * 0.18, 1);
-    this.padBus.gain.rampTo(0.82 + space * 0.12, 1);
+    this.melodyBus.gain.rampTo(0.62 + (1 - space) * 0.16, 1);
+    this.padBus.gain.rampTo(0.7 + space * 0.1, 1);
   }
 
   getAnalyser(): Tone.Analyser {

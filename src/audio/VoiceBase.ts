@@ -41,6 +41,9 @@ export abstract class VoiceBase {
   private readonly basePan: number;
   protected harmonicContext: HarmonicContext | null = null;
   protected fadeSpeed = 0.012;
+  /** Seconds since the last full (re-)attack — long-lived beds watch this to
+   * re-articulate before their filter envelopes decay into darkness. */
+  protected sinceAttack = 0;
   protected lastMovementIndex = -1;
   protected lastGestureId = -1;
   /** Voices that swell together on ensemble cues */
@@ -163,6 +166,7 @@ export abstract class VoiceBase {
     this.state = 'fadingIn';
     this.targetLevel = this.maxGain;
     this.lastFilterFreq = -1;
+    this.sinceAttack = 0;
     this.onEnter(ctx);
   }
 
@@ -172,12 +176,16 @@ export abstract class VoiceBase {
     const phaseBoost = phaseLevelBoost(this.harmonicContext?.movementPhase);
     const interestBoost = 0.8 + interest * 0.2;
     const ensembleBoost =
-      1 + (this.harmonicContext?.ensemblePulse ?? 0) * (this.respondsToEnsemble ? 0.12 : 0.04);
+      1 + (this.harmonicContext?.ensemblePulse ?? 0) * (this.respondsToEnsemble ? 0.08 : 0.04);
     const warmthCutoff = 800 + knobs.warmth * 1200;
 
+    this.sinceAttack += dt;
     this.onUpdate(dt, interest, knobs);
 
-    const target = this.targetLevel * interestBoost * phaseBoost * ensembleBoost;
+    // Cap the stacked boosts — in bloom the ensemble swell otherwise pushes
+    // an already-full bus past its summed headroom into the limiter.
+    const boost = Math.min(1.1, interestBoost * phaseBoost * ensembleBoost);
+    const target = this.targetLevel * boost;
 
     if (this.state === 'fadingIn') {
       this.level += this.fadeSpeed * dt * 60;
@@ -219,6 +227,7 @@ export abstract class VoiceBase {
     if (movementChanged) {
       this.onHarmonicShift(ctx);
       this.lastMovementIndex = ctx.movementIndex;
+      this.sinceAttack = 0;
     }
     if (
       this.respondsToEnsemble &&
@@ -227,6 +236,7 @@ export abstract class VoiceBase {
     ) {
       this.onEnsembleCue(ctx);
       this.lastGestureId = ctx.gestureId;
+      this.sinceAttack = 0;
     }
   }
 
@@ -330,6 +340,7 @@ export abstract class VoiceBase {
     if (!synth) return;
     synth.releaseAll();
     synth.triggerAttack(notes, Tone.now(), velocity);
+    this.sinceAttack = 0;
   }
 
   private disposeNode(node: Tone.ToneAudioNode): void {

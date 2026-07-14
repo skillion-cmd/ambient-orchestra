@@ -35,30 +35,33 @@ export class HarmonyBed extends VoiceBase {
         octaves: 2.8,
       },
     }).connect(this.filter);
-    this.synth.maxPolyphony = 8;
-    const notes = [
-      ...this.getChordNotes(ctx, 0),
-      ...this.getChordNotes(ctx, 1),
-    ];
-    this.synth.triggerAttack(notes, Tone.now(), 0.13);
+    this.synth.maxPolyphony = 10;
+    this.synth.triggerAttack(this.fullVoicing(ctx), Tone.now(), 0.13);
+  }
+
+  /** Single source of truth for the voicing — every re-attack must play the
+   * full set or the bed permanently thins over a session. */
+  private fullVoicing(ctx: HarmonicContext): string[] {
+    return [...this.getChordNotes(ctx, 0), ...this.getChordNotes(ctx, 1)];
   }
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
-    const notes = [
-      ...this.getChordNotes(ctx, 0),
-      ...this.getChordNotes(ctx, 1),
-    ];
     this.synth.releaseAll();
-    this.synth.triggerAttack(notes, Tone.now() + 0.5, 0.11);
+    this.synth.triggerAttack(this.fullVoicing(ctx), Tone.now() + 0.5, 0.11);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
-    this.ensembleAttack(this.synth, this.getChordNotes(ctx, 1), 0.06);
+    this.ensembleAttack(this.synth, this.fullVoicing(ctx), 0.06);
   }
 
   onUpdate(_dt: number, _interest: number, knobs: SoundKnobs): void {
     this.rampFilter(this.filter, 500 + knobs.warmth * 2200, 3);
+    if (this.state === 'sustaining' && this.sinceAttack > 45 && this.harmonicContext) {
+      // Breathe, don't gesture: low velocity restores the decayed filter
+      // envelopes before the bed darkens into inaudibility.
+      this.ensembleAttack(this.synth, this.fullVoicing(this.harmonicContext), 0.05);
+    }
   }
 
   onExit(): void {
@@ -195,7 +198,10 @@ export class DeepPressure extends VoiceBase {
 
   constructor(dest: Bus) {
     super('deepPressure', dest, 0.12);
-    this.fadeSpeed = 0.0004;
+    // Fast enough to be felt within ~2s of bloom onset — at 0.0004 the sub
+    // needed ~5s to become audible and short blooms exited it first. The
+    // 0.025Hz swell LFO still provides the tidal character.
+    this.fadeSpeed = 0.0012;
   }
 
   onEnter(ctx: HarmonicContext): void {
@@ -273,6 +279,9 @@ export class WarmPad extends VoiceBase {
 
   onUpdate(_dt: number, _interest: number, knobs: SoundKnobs): void {
     this.rampFilter(this.filter, 450 + knobs.warmth * 1600, 2);
+    if (this.state === 'sustaining' && this.sinceAttack > 45 && this.harmonicContext) {
+      this.ensembleAttack(this.synth, this.getChordNotes(this.harmonicContext, 0), 0.05);
+    }
   }
 
   onExit(): void {
@@ -403,26 +412,25 @@ export class TapeChoir extends VoiceBase {
       },
     }).connect(this.filter);
     this.synth.maxPolyphony = 6;
-    const notes = [
+    this.synth.triggerAttack(this.fullVoicing(ctx), Tone.now(), 0.13);
+  }
+
+  /** Full choir voicing — re-attacks must not thin it (see HarmonyBed). */
+  private fullVoicing(ctx: HarmonicContext): string[] {
+    return [
       ...ctx.chordDegrees.slice(0, 3).map((d) => this.noteAt(ctx, d, 0)),
       this.getMelodyNote(ctx, 1),
     ];
-    this.synth.triggerAttack(notes, Tone.now(), 0.13);
   }
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
     this.synth.releaseAll();
-    const notes = [
-      ...ctx.chordDegrees.slice(0, 3).map((d) => this.noteAt(ctx, d, 0)),
-      this.getMelodyNote(ctx, 1),
-    ];
-    this.synth.triggerAttack(notes, Tone.now() + 1.2, 0.11);
+    this.synth.triggerAttack(this.fullVoicing(ctx), Tone.now() + 1.2, 0.11);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
-    const notes = ctx.chordDegrees.slice(0, 2).map((d) => this.noteAt(ctx, d, 0));
-    this.ensembleAttack(this.synth, notes, 0.07);
+    this.ensembleAttack(this.synth, this.fullVoicing(ctx), 0.07);
   }
 
   onUpdate(dt: number, _interest: number, knobs: SoundKnobs): void {
@@ -715,32 +723,36 @@ export class OrchestraWhole extends VoiceBase {
         octaves: 3.0,
       },
     }).connect(this.filter);
-    this.synth.maxPolyphony = 10;
-    const notes = [
+    this.synth.maxPolyphony = 14;
+    this.synth.triggerAttack(this.fullVoicing(ctx), Tone.now(), 0.12);
+  }
+
+  /** The full three-octave stack — re-attacks that drop the low octave
+   * permanently rob the orchestra of its body (see HarmonyBed). */
+  private fullVoicing(ctx: HarmonicContext): string[] {
+    return [
       ...this.getChordNotes(ctx, -1),
       ...this.getChordNotes(ctx, 0),
       ...this.getChordNotes(ctx, 1),
     ];
-    this.synth.triggerAttack(notes, Tone.now(), 0.12);
   }
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
     this.synth.releaseAll();
-    const notes = [
-      ...this.getChordNotes(ctx, 0),
-      ...this.getChordNotes(ctx, 1),
-    ];
-    this.synth.triggerAttack(notes, Tone.now() + 2, 0.1);
+    this.synth.triggerAttack(this.fullVoicing(ctx), Tone.now() + 2, 0.1);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
-    const notes = [...this.getChordNotes(ctx, 0), this.getMelodyNote(ctx, 1)];
+    const notes = [...this.fullVoicing(ctx), this.getMelodyNote(ctx, 1)];
     this.ensembleAttack(this.synth, notes, 0.09);
   }
 
   onUpdate(_dt: number, _interest: number, knobs: SoundKnobs): void {
     this.rampFilter(this.filter, 550 + knobs.warmth * 2400, 3);
+    if (this.state === 'sustaining' && this.sinceAttack > 45 && this.harmonicContext) {
+      this.ensembleAttack(this.synth, this.fullVoicing(this.harmonicContext), 0.05);
+    }
   }
 
   onExit(): void {
