@@ -131,7 +131,7 @@ function loop(now: number): void {
     const visualReadout = visualizer.getReadoutState(harmonic);
     sessionReadout.update(audioEngine.getMovementReadoutState());
     visualizer.update(features, dt, controls.getKnobs().visual, harmonic, audioEngine.getSpectrum());
-    cymaticsOverlay.update(features, harmonic);
+    cymaticsOverlay.update(features, harmonic, controls.getLastTouched());
     visualScope.update(visualReadout, controls.getKnobs().visual, lastArt);
 
     perfMonitor.frame(dtMs, {

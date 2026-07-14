@@ -95,6 +95,13 @@ export class Conductor {
     this.knobs = knobs;
   }
 
+  /** Fire the layer scheduler on the next update — calibrate uses this so a
+   * rising Density knob is answered by a voice joining right away instead of
+   * on the next randomly scheduled event. */
+  pokeScheduler(): void {
+    this.timeSinceEvent = Math.max(this.timeSinceEvent, this.nextEventIn);
+  }
+
   start(): void {
     if (this.started) return;
     this.started = true;

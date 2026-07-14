@@ -40,6 +40,14 @@ const VISUAL_KNOBS: KnobSpec[] = [
   { key: 'fog', label: 'Fog', left: 'Clear', right: 'Dense', section: 'visual' },
 ];
 
+export interface LastTouchedKnob {
+  section: 'sound' | 'visual';
+  label: string;
+  value: number;
+  /** performance.now() timestamp of the touch. */
+  at: number;
+}
+
 export class Controls {
   /** Audio knob grid — mounts into the left rail. */
   readonly audioElement: HTMLElement;
@@ -49,6 +57,7 @@ export class Controls {
   private readonly bindings: KnobBinding[] = [];
   private mode: AppMode = 'drift';
   private readonly initialKnobs: AppKnobs;
+  private lastTouched: LastTouchedKnob | null = null;
 
   constructor(
     private readonly onKnobsChange: (knobs: AppKnobs) => void,
@@ -64,6 +73,11 @@ export class Controls {
 
   getKnobs(): AppKnobs {
     return this.automator.getKnobs();
+  }
+
+  /** Most recently user-dragged knob — readouts echo it briefly. */
+  getLastTouched(): LastTouchedKnob | null {
+    return this.lastTouched;
   }
 
   /** Seed widgets and engine from a stored calibration. */
@@ -133,6 +147,12 @@ export class Controls {
         } else {
           current.visual[item.key as keyof AppKnobs['visual']] = value;
         }
+        this.lastTouched = {
+          section: item.section,
+          label: item.label,
+          value,
+          at: performance.now(),
+        };
         this.automator.syncFromUser(current);
         this.onKnobsChange(this.automator.getKnobs());
       });

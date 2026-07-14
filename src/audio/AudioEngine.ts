@@ -32,6 +32,7 @@ export class AudioEngine {
   private running = false;
   private mode: 'drift' | 'calibrate' = 'drift';
   private lastAppliedSound = { ...DEFAULT_KNOBS.sound };
+  private pokeAnchorActivity = DEFAULT_KNOBS.sound.activity;
   private featureFrame = 0;
   private cachedFeatures: AudioFeatures = { bass: 0, mids: 0, highs: 0, overall: 0 };
   private readonly baseMasterGain = 0.8;
@@ -142,6 +143,15 @@ export class AudioEngine {
   }
 
   setKnobs(knobs: AppKnobs): void {
+    // A deliberate Density push in calibrate should be answered by a voice
+    // joining right away, not on the next randomly scheduled event.
+    const activity = knobs.sound.activity;
+    if (this.mode === 'calibrate' && activity - this.pokeAnchorActivity > 0.1) {
+      this.pokeAnchorActivity = activity;
+      this.conductor.pokeScheduler();
+    } else if (activity < this.pokeAnchorActivity) {
+      this.pokeAnchorActivity = activity;
+    }
     this.knobs = knobs;
     this.applyKnobs(true);
   }
