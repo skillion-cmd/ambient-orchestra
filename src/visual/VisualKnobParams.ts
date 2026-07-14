@@ -18,7 +18,7 @@ export interface VisualKnobParams {
 }
 
 export function resolveVisualKnobs(knobs: VisualKnobs): VisualKnobParams {
-  const { grain, ripple, drift } = knobs;
+  const { grain, ripple, drift, trails } = knobs;
 
   return {
     particleTarget: Math.floor(200 + grain * 760),
@@ -35,6 +35,8 @@ export function resolveVisualKnobs(knobs: VisualKnobs): VisualKnobParams {
     spinRate: 0.18 + drift * 1.25,
     loopSpeed: 0.65 + drift * 1.05,
     angularStep: 0.025 + drift * 0.2,
-    trailFade: 0.038 + drift * 0.085,
+    // Trails owns persistence (low fade = long streaks); drift keeps a
+    // secondary say. Neutral (trails 0.5, drift 0.4) matches the old curve.
+    trailFade: (0.02 + (1 - trails) * 0.11) * (0.75 + drift * 0.5),
   };
 }

@@ -50,7 +50,9 @@ export function storeKnobs(knobs: AppKnobs): void {
   }
 }
 
-/** Every expected key must be a finite 0–1 number; unknown keys are dropped. */
+/** Present keys must be finite 0–1 numbers; unknown keys are dropped.
+ * Missing keys are backfilled from defaults so calibrations saved before a
+ * knob existed still load — only corruption (bad type/range) resets. */
 function readSection<T extends object>(
   parsed: unknown,
   section: string,
@@ -62,6 +64,10 @@ function readSection<T extends object>(
   const out: Record<string, number> = {};
   for (const key of Object.keys(defaults)) {
     const value = (raw as Record<string, unknown>)[key];
+    if (value === undefined) {
+      out[key] = (defaults as Record<string, number>)[key]!;
+      continue;
+    }
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) {
       return null;
     }

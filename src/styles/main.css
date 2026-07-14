@@ -207,6 +207,16 @@ body[data-mode='drift'] .rail {
   justify-items: center;
 }
 
+/* Nine audio knobs need three columns to keep the rail height in check. */
+.knob-grid--three {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px 6px;
+}
+
+.knob-grid--three .knob {
+  width: 66px;
+}
+
 .knob {
   display: flex;
   flex-direction: column;
@@ -410,6 +420,14 @@ body[data-mode='drift'] .rail {
 
   .knob-grid {
     gap: 16px 10px;
+  }
+
+  .knob-grid--three {
+    gap: 14px 4px;
+  }
+
+  .knob-grid--three .knob {
+    width: 58px;
   }
 }
 

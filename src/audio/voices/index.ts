@@ -1025,12 +1025,13 @@ export function createAllVoices(
   melodyBus: Bus,
   airBus: Bus,
   subBus: Bus,
+  foundationBus: Bus = padBus,
 ): VoiceBase[] {
   return [
     new OrchestraWhole(padBus),
     new HarmonyBed(padBus),
     new DreamMelody(melodyBus),
-    new SubDrone(padBus),
+    new SubDrone(foundationBus),
     new DeepPressure(subBus),
     new WarmPad(padBus),
     new GlassPad(melodyBus),

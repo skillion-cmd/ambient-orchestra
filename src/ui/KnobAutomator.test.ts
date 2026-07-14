@@ -70,7 +70,16 @@ describe('KnobAutomator', () => {
     const extremes = runSession(automator, 400);
 
     expect(extremes.get('pulse')).toEqual({ min: anchors.pulse, max: anchors.pulse });
-    for (const key of ['warmth', 'space', 'activity', 'memory', 'entropy'] as const) {
+    for (const key of [
+      'warmth',
+      'space',
+      'activity',
+      'memory',
+      'entropy',
+      'foundation',
+      'width',
+      'texture',
+    ] as const) {
       const range = extremes.get(key)!;
       // Orbit ±0.08 plus phase nudges up to 0.12; values must stay near anchor.
       expect(range.min).toBeGreaterThanOrEqual(anchors[key] - 0.09);
@@ -88,7 +97,9 @@ describe('KnobAutomator', () => {
     expect(pulseRange.max - pulseRange.min).toBeGreaterThan(0.01);
 
     // At least one knob should escape the old anchored envelope.
-    const escaped = (['warmth', 'space', 'activity', 'memory', 'entropy'] as const).some(
+    const escaped = (
+      ['warmth', 'space', 'activity', 'memory', 'entropy', 'foundation', 'width', 'texture'] as const
+    ).some(
       (key) => {
         const range = extremes.get(key)!;
         return range.min < anchors[key] - 0.22 || range.max > anchors[key] + 0.22;

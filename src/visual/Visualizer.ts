@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { HarmonicContext, VisualKnobs } from '../audio/types';
+import { DEFAULT_KNOBS } from '../audio/types';
 import type { AudioFeatures } from '../audio/types';
 import { AudioFeatureSmoother } from './AudioFeatures';
 import { FluidField } from './FluidField';
@@ -41,12 +42,8 @@ export class Visualizer {
   private cameraDrift = 0;
   private breathe = 0.5;
   private artFocusOffset = 0;
-  private visualParams: VisualKnobParams = resolveVisualKnobs({
-    grain: 0.45,
-    ripple: 0.5,
-    drift: 0.4,
-    focus: 0.28,
-  });
+  private artFogMultiplier = 1;
+  private visualParams: VisualKnobParams = resolveVisualKnobs(DEFAULT_KNOBS.visual);
 
   constructor(private readonly canvas: HTMLCanvasElement, theme: SceneTheme = loadStoredTheme()) {
     this.theme = theme;
@@ -92,7 +89,7 @@ export class Visualizer {
 
   /** Apply autonomous Art Director directives — call before update(). */
   applyDirectives(d: ArtDirectorDirectives): void {
-    this.ghosts.fogMultiplier = d.fogMultiplier;
+    this.artFogMultiplier = d.fogMultiplier;
     this.ghosts.moodBlend = d.moodBlend;
     this.artFocusOffset = d.focusOffset;
     if (d.constellationTrigger) this.ghosts.triggerConstellation();
@@ -168,6 +165,12 @@ export class Visualizer {
 
     const focus = Math.max(0, Math.min(1, knobs.focus + this.artFocusOffset));
     const balance = resolveLayerBalance(focus);
+
+    // Fog knob rides over the art director's phase breathing (neutral at 0.5).
+    const fogK = 0.5 + knobs.fog;
+    this.ghosts.fogMultiplier = this.artFogMultiplier * fogK;
+    const sceneFog = this.scene.fog as THREE.FogExp2 | null;
+    if (sceneFog) sceneFog.density = getThemePalette(this.theme).fogDensity * fogK;
 
     this.visualParams = this.ghosts.update(
       dt,

@@ -130,6 +130,10 @@ export class KnobAutomator {
         if (key === 'memory' && (phase === 'bloom' || phase === 'hang')) base += 0.12;
         if (key === 'entropy' && phase === 'dissolve') base += 0.1;
         if (key === 'warmth' && phase === 'bloom') base += 0.05;
+        if (key === 'foundation' && (phase === 'bloom' || phase === 'hang')) base += 0.08;
+        if (key === 'width' && phase === 'bloom') base += 0.08;
+        if (key === 'width' && (phase === 'drift' || phase === 'exhale')) base -= 0.08;
+        if (key === 'texture' && (phase === 'dissolve' || phase === 'exhale')) base += 0.08;
 
         this.targets.sound[key] = clamp(base);
       } else {
@@ -146,6 +150,10 @@ export class KnobAutomator {
         if (key === 'grain' && harmonic.ensemblePulse > 0.3) base += 0.07;
         if (key === 'focus' && phase === 'bloom') base += 0.12;
         if (key === 'focus' && phase === 'drift') base -= 0.1;
+        if (key === 'trails' && (phase === 'drift' || phase === 'dissolve')) base += 0.06;
+        // Blooms clear the air — mirrors the art director's fog retreat.
+        if (key === 'fog' && phase === 'bloom') base -= 0.08;
+        if (key === 'fog' && phase === 'exhale') base += 0.08;
 
         this.targets.visual[key] = clamp(base);
       }
@@ -159,10 +167,15 @@ export class KnobAutomator {
       { section: 'sound', key: 'activity' },
       { section: 'sound', key: 'memory' },
       { section: 'sound', key: 'entropy' },
+      { section: 'sound', key: 'foundation' },
+      { section: 'sound', key: 'width' },
+      { section: 'sound', key: 'texture' },
       { section: 'visual', key: 'grain' },
       { section: 'visual', key: 'ripple' },
       { section: 'visual', key: 'drift' },
       { section: 'visual', key: 'focus' },
+      { section: 'visual', key: 'trails' },
+      { section: 'visual', key: 'fog' },
     ];
     // Tempo only self-drives when the piece is fully autonomous.
     if (this.fullAuto) all.push({ section: 'sound', key: 'pulse' });
