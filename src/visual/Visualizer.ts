@@ -16,6 +16,8 @@ import {
 import { ExtrusionField } from './three/ExtrusionField';
 import { GhostField } from './three/GhostField';
 import { TrailPass } from './three/TrailPass';
+import { CurrentsField } from './currents/CurrentsField';
+import { loadStoredVisualMode, type VisualMode } from './VisualMode';
 
 const MAX_DPR = 1.5;
 
@@ -34,6 +36,9 @@ export class Visualizer {
   private readonly fluid = new FluidField();
   private readonly ghosts: GhostField;
   private readonly bodies: ExtrusionField;
+  /** Wind-map currents layer — built lazily on the first switch. */
+  private currents: CurrentsField | null = null;
+  private visualMode: VisualMode;
   private readonly spectrumScratch = new Float32Array(64);
   private readonly trailBg = new THREE.Color();
   private theme: SceneTheme;
@@ -71,6 +76,8 @@ export class Visualizer {
     this.ghosts = new GhostField(this.worldGroup, theme);
     this.bodies = new ExtrusionField(this.worldGroup);
     this.bodies.setTheme(theme);
+    this.visualMode = loadStoredVisualMode();
+    if (this.visualMode === 'currents') this.ensureCurrents();
     this.resize();
   }
 
@@ -91,8 +98,29 @@ export class Visualizer {
   applyDirectives(d: ArtDirectorDirectives): void {
     this.artFogMultiplier = d.fogMultiplier;
     this.ghosts.moodBlend = d.moodBlend;
+    if (this.currents) this.currents.moodBlend = d.moodBlend;
     this.artFocusOffset = d.focusOffset;
     if (d.constellationTrigger) this.ghosts.triggerConstellation();
+  }
+
+  setVisualMode(mode: VisualMode): void {
+    if (mode === this.visualMode) return;
+    this.visualMode = mode;
+    if (mode === 'currents') this.ensureCurrents();
+  }
+
+  getVisualMode(): VisualMode {
+    return this.visualMode;
+  }
+
+  private ensureCurrents(): CurrentsField {
+    if (!this.currents) {
+      // Scene-level, NOT inside worldGroup: the world scale (~2.3x) would
+      // push most of the current plane outside the frustum and shove what's
+      // left into the pale far-fog depth band.
+      this.currents = new CurrentsField(this.scene, this.theme);
+    }
+    return this.currents;
   }
 
   setTheme(theme: SceneTheme): void {
@@ -106,6 +134,7 @@ export class Visualizer {
     applySceneFog(this.scene, theme);
     this.ghosts.setTheme(theme);
     this.bodies.setTheme(theme);
+    this.currents?.setTheme(theme);
   }
 
   getTheme(): SceneTheme {
@@ -172,16 +201,22 @@ export class Visualizer {
     const sceneFog = this.scene.fog as THREE.FogExp2 | null;
     if (sceneFog) sceneFog.density = getThemePalette(this.theme).fogDensity * fogK;
 
-    this.visualParams = this.ghosts.update(
-      dt,
-      state,
-      features,
-      harmonic,
-      knobs,
-      this.breathe,
-      balance,
-    );
-    this.bodies.update(dt, state, features, harmonic, knobs, bands, this.breathe, balance);
+    const inCurrents = this.visualMode === 'currents' && this.currents;
+    if (inCurrents) {
+      this.visualParams = resolveVisualKnobs(knobs);
+      this.currents!.update(dt, features, harmonic, knobs, this.breathe);
+    } else {
+      this.visualParams = this.ghosts.update(
+        dt,
+        state,
+        features,
+        harmonic,
+        knobs,
+        this.breathe,
+        balance,
+      );
+      this.bodies.update(dt, state, features, harmonic, knobs, bands, this.breathe, balance);
+    }
 
     this.cameraDrift += dt * (0.08 + knobs.drift * 0.12);
     const inhale = harmonic.inhaleGesture;
@@ -200,13 +235,17 @@ export class Visualizer {
       baseScale * (1 - inhale * 0.15 + spaceThrow * 0.22),
     );
 
-    this.ghosts.group.visible = balance.ghostWeight > 0.08;
-    this.bodies.group.visible = balance.bodyWeight > 0.08;
+    this.ghosts.group.visible = !inCurrents && balance.ghostWeight > 0.08;
+    this.bodies.group.visible = !inCurrents && balance.bodyWeight > 0.08;
+    if (this.currents) this.currents.group.visible = !!inCurrents;
 
-    const ghostTrail =
-      this.visualParams.trailFade * (0.38 + balance.ghostWeight * 0.34);
+    // Currents lean on the trail buffer much harder — the streaks ARE the
+    // visual — so the trails knob gets a lower fade floor there.
+    const baseTrail = inCurrents
+      ? 0.01 + (1 - knobs.trails) * 0.07
+      : this.visualParams.trailFade * (0.38 + balance.ghostWeight * 0.34);
     const trailFade =
-      ghostTrail * (1 + inhale * 2.8) * Math.max(0.35, 1 - spaceThrow * 0.45);
+      baseTrail * (1 + inhale * 2.8) * Math.max(0.35, 1 - spaceThrow * 0.45);
     const rt = this.trailPass.beginFrame(trailFade);
     this.renderer.setRenderTarget(rt);
     this.renderer.clearDepth();
@@ -217,14 +256,16 @@ export class Visualizer {
   dispose(): void {
     this.trailPass.dispose();
     this.ghosts.dispose();
+    this.currents?.dispose();
     this.renderer.dispose();
   }
 
   getReadoutState(harmonic: HarmonicContext) {
     const body = this.bodies.getReadoutState(harmonic);
+    const inCurrents = this.visualMode === 'currents' && this.currents;
     return {
       ...body,
-      particleCount: this.ghosts.getActiveCount(),
+      particleCount: inCurrents ? this.currents!.getActiveCount() : this.ghosts.getActiveCount(),
       particleTarget: Math.floor(this.visualParams.particleTarget * (0.55 + this.breathe * 0.45)),
     };
   }

@@ -51,6 +51,11 @@ body {
   gap: 12px;
 }
 
+#rail-right-toggle {
+  display: inline-flex;
+  gap: 6px;
+}
+
 .theme-toggle {
   font-family: inherit;
   font-size: 9px;

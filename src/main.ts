@@ -11,6 +11,8 @@ import { PerfMonitor } from './diagnostics/PerfMonitor';
 import { applyUiTheme, loadStoredTheme, storeTheme } from './visual/ScenePalette';
 import { loadStoredKnobs, loadStoredMode, storeKnobs, storeMode, type AppMode } from './ui/AppMode';
 import { ModeToggle } from './ui/ModeToggle';
+import { VisualModeToggle } from './ui/VisualModeToggle';
+import { loadStoredVisualMode } from './visual/VisualMode';
 
 const initialTheme = loadStoredTheme();
 applyUiTheme(initialTheme);
@@ -89,6 +91,11 @@ const themeToggle = new ThemeToggle(initialTheme, (theme) => {
   visualScope.refreshTheme();
 });
 rightToggleSlot.appendChild(themeToggle.element);
+
+const visualModeToggle = new VisualModeToggle(loadStoredVisualMode(), (visualMode) => {
+  visualizer?.setVisualMode(visualMode);
+});
+rightToggleSlot.appendChild(visualModeToggle.element);
 
 function setMode(next: AppMode): void {
   mode = next;
