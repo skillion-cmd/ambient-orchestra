@@ -10,6 +10,7 @@ export class AudioEngine {
   private readonly melodyBus: Tone.Gain;
   private readonly airBus: Tone.Gain;
   private readonly subBus: Tone.Gain;
+  private readonly foundationBus: Tone.Gain;
   private readonly masterBus: Tone.Gain;
   private readonly intensityGain: Tone.Gain;
   private readonly glue: Tone.Compressor;
@@ -21,6 +22,7 @@ export class AudioEngine {
   private readonly highpass: Tone.Filter;
   private readonly analyser: Tone.Analyser;
   private readonly limiter: Tone.Limiter;
+  private readonly subLimiter: Tone.Limiter;
   private readonly voices;
   readonly conductor: Conductor;
   private knobs: AppKnobs = {
@@ -28,10 +30,12 @@ export class AudioEngine {
     visual: { ...DEFAULT_KNOBS.visual },
   };
   private running = false;
+  private mode: 'drift' | 'calibrate' = 'drift';
   private lastAppliedSound = { ...DEFAULT_KNOBS.sound };
+  private pokeAnchorActivity = DEFAULT_KNOBS.sound.activity;
   private featureFrame = 0;
   private cachedFeatures: AudioFeatures = { bass: 0, mids: 0, highs: 0, overall: 0 };
-  private readonly baseMasterGain = 0.72;
+  private readonly baseMasterGain = 0.8;
   private readonly baseDelayFeedback = 0.22;
   private readonly baseReverbWet = 0.42;
   private spaceThrowTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -42,8 +46,8 @@ export class AudioEngine {
   private readonly baseWidth = 0.55;
 
   constructor() {
-    this.padBus = new Tone.Gain(0.85);
-    this.melodyBus = new Tone.Gain(0.75);
+    this.padBus = new Tone.Gain(0.72);
+    this.melodyBus = new Tone.Gain(0.68);
     this.airBus = new Tone.Gain(0.35);
     this.masterBus = new Tone.Gain(this.baseMasterGain);
     this.intensityGain = new Tone.Gain(1);
@@ -82,13 +86,27 @@ export class AudioEngine {
 
     // Dry sub path: joins at the tilt EQ, bypassing the 90Hz highpass (which
     // would kill true sub), the 14s reverb/delay (mud), the chorus, and the
-    // glue compressor (a sub must not pump the mix). Still hits the warmth
-    // tilt, the limiter, and the analyser so the visualizer's bass band
-    // sees the pressure.
-    this.subBus = new Tone.Gain(0.5);
-    this.subBus.connect(this.tiltEQ);
+    // glue compressor (a sub must not pump the mix). Its own limiter keeps a
+    // swelling sub from eating the master limiter's headroom on behalf of
+    // the whole mix. Still hits the warmth tilt, the master limiter, and the
+    // analyser so the visualizer's bass band sees the pressure.
+    this.subBus = new Tone.Gain(0.42);
+    this.subLimiter = new Tone.Limiter(-8);
+    this.subBus.connect(this.subLimiter);
+    this.subLimiter.connect(this.tiltEQ);
 
-    this.voices = createAllVoices(this.padBus, this.melodyBus, this.airBus, this.subBus);
+    // Foundation weight: the Sub knob scales the sub drone (into the pad
+    // bus) together with the deep-pressure path above.
+    this.foundationBus = new Tone.Gain(1);
+    this.foundationBus.connect(this.padBus);
+
+    this.voices = createAllVoices(
+      this.padBus,
+      this.melodyBus,
+      this.airBus,
+      this.subBus,
+      this.foundationBus,
+    );
 
     const fx: ConductorFx = {
       triggerPreEnsembleInhale: () => this.triggerPreEnsembleInhale(),
@@ -125,12 +143,23 @@ export class AudioEngine {
   }
 
   setKnobs(knobs: AppKnobs): void {
+    // A deliberate Density push in calibrate should be answered by a voice
+    // joining right away, not on the next randomly scheduled event.
+    const activity = knobs.sound.activity;
+    if (this.mode === 'calibrate' && activity - this.pokeAnchorActivity > 0.1) {
+      this.pokeAnchorActivity = activity;
+      this.conductor.pokeScheduler();
+    } else if (activity < this.pokeAnchorActivity) {
+      this.pokeAnchorActivity = activity;
+    }
     this.knobs = knobs;
     this.applyKnobs(true);
   }
 
-  /** Calibrate steadies the tempo so the Tempo knob acts as a direct lever. */
+  /** Calibrate steadies the tempo so the Tempo knob acts as a direct lever,
+   * and switches knob ramps from slow glides to under-the-finger response. */
   setMode(mode: 'drift' | 'calibrate'): void {
+    this.mode = mode;
     this.conductor.clock.steadyTempo = mode === 'calibrate';
   }
 
@@ -154,13 +183,23 @@ export class AudioEngine {
     if (Math.abs(v - this.masterStereoWidth) < 0.01) return;
     this.masterStereoWidth = v;
     this.applyStereoWidth(rampSec);
-    for (const voice of this.voices) voice.setStereoWidth(v, rampSec);
   }
 
+  /** Widener + per-voice pan spread — Width knob composes with the
+   * ConductorSkill's phase-driven stereo image. */
   private applyStereoWidth(rampSec = 4): void {
     const space = this.knobs.sound.space;
-    const width = Math.max(0, Math.min(1, this.baseWidth * (0.7 + space * 0.55) * this.masterStereoWidth));
+    const width = Math.max(
+      0,
+      Math.min(1, this.baseWidth * this.widthKnobFactor() * (0.7 + space * 0.55) * this.masterStereoWidth),
+    );
     this.widener.width.rampTo(width, rampSec);
+    this.applyVoiceWidth(rampSec);
+  }
+
+  private applyVoiceWidth(rampSec: number): void {
+    const v = Math.max(0, Math.min(1.5, this.masterStereoWidth * this.widthKnobFactor()));
+    for (const voice of this.voices) voice.setStereoWidth(v, rampSec);
   }
 
   triggerPreEnsembleInhale(): void {
@@ -180,7 +219,7 @@ export class AudioEngine {
     this.delay.feedback.cancelScheduledValues(now);
     this.delay.feedback.setValueAtTime(this.delay.feedback.value, now);
     this.delay.feedback.linearRampToValueAtTime(
-      Math.min(0.62, this.baseDelayFeedback + 0.28 + space * 0.12),
+      Math.min(0.62, this.delayFeedbackBase() + 0.28 + space * 0.12),
       now + 0.4,
     );
     this.reverb.wet.linearRampToValueAtTime(
@@ -189,7 +228,7 @@ export class AudioEngine {
     );
     this.spaceThrowTimeout = setTimeout(() => {
       const t = Tone.now();
-      this.delay.feedback.linearRampToValueAtTime(this.baseDelayFeedback, t + 1.5);
+      this.delay.feedback.linearRampToValueAtTime(this.delayFeedbackBase(), t + 1.5);
       this.reverb.wet.linearRampToValueAtTime(
         0.2 + this.knobs.sound.space * 0.5,
         t + 1.8,
@@ -216,31 +255,54 @@ export class AudioEngine {
   }
 
   private applyKnobs(force = false): void {
-    const { warmth, space, pulse } = this.knobs.sound;
     const s = this.knobs.sound;
     const prev = this.lastAppliedSound;
 
-    if (
-      !force &&
-      Math.abs(s.warmth - prev.warmth) < 0.002 &&
-      Math.abs(s.space - prev.space) < 0.002 &&
-      Math.abs(s.pulse - prev.pulse) < 0.002
-    ) {
+    const keys = Object.keys(s) as (keyof typeof s)[];
+    if (!force && keys.every((k) => Math.abs(s[k] - prev[k]) < 0.002)) {
       return;
     }
 
     this.lastAppliedSound = { ...s };
 
-    this.tiltEQ.low.rampTo(-3 + warmth * 5, 1);
-    this.tiltEQ.high.rampTo(3 - warmth * 5, 1);
+    // Calibrate wants the change audible under the finger; Drift keeps its
+    // slow aesthetic glides.
+    const ramp = this.mode === 'calibrate' ? 0.12 : 1;
 
-    this.reverb.wet.rampTo(0.2 + space * 0.5, 1);
-    this.delay.wet.rampTo(0.08 + space * 0.26 + pulse * 0.06, 1);
-    this.applyStereoWidth(1);
-    this.chorus.wet.rampTo(0.28 + space * 0.22, 1);
+    this.tiltEQ.low.rampTo(-3 + s.warmth * 5, ramp);
+    this.tiltEQ.high.rampTo(3 - s.warmth * 5, ramp);
 
-    this.melodyBus.gain.rampTo(0.68 + (1 - space) * 0.18, 1);
-    this.padBus.gain.rampTo(0.82 + space * 0.12, 1);
+    this.reverb.wet.rampTo(0.2 + s.space * 0.5, ramp);
+    this.delay.wet.rampTo(0.08 + s.space * 0.26 + s.pulse * 0.06, ramp);
+    this.delay.feedback.rampTo(this.delayFeedbackBase(), ramp);
+    this.applyStereoWidth(ramp);
+    this.chorus.wet.rampTo(0.28 + s.space * 0.22, ramp);
+    // Variation as live modulation movement — depth is a plain property.
+    this.chorus.depth = 0.35 + s.entropy * 0.45;
+
+    // Live lushness trims so Density and Melody respond while dragging, not
+    // only on the next composed phrase. Each trim is 1.0 at its knob's
+    // default and stays within ~±2.5dB so Drift's roaming can't pump the mix.
+    const melodyTrim = 0.75 + s.memory * 0.55;
+    const padTrim = 0.93 + s.activity * 0.2;
+    const airTrim = 0.79 + s.activity * 0.6;
+    this.melodyBus.gain.rampTo((0.62 + (1 - s.space) * 0.16) * melodyTrim, ramp);
+    this.padBus.gain.rampTo((0.7 + s.space * 0.1) * padTrim, ramp);
+    this.airBus.gain.rampTo((0.1 + s.texture * 0.5) * airTrim, ramp);
+
+    this.subBus.gain.rampTo(0.15 + s.foundation * 0.54, ramp);
+    this.foundationBus.gain.rampTo(Math.min(1.25, 0.3 + s.foundation * 1.4), ramp);
+  }
+
+  /** Knob-derived delay feedback — gesture restores must re-read this
+   * instead of the raw base or they stomp the Variation knob. */
+  private delayFeedbackBase(): number {
+    return Math.min(0.45, this.baseDelayFeedback * (0.6 + this.knobs.sound.entropy * 0.9));
+  }
+
+  /** Width knob factor: 0 = mono-ish/intimate, 0.5 = neutral, 1 = wide. */
+  private widthKnobFactor(): number {
+    return 0.45 + this.knobs.sound.width * 1.1;
   }
 
   getAnalyser(): Tone.Analyser {

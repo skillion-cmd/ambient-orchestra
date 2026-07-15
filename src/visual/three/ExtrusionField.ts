@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createNoise3D } from 'simplex-noise';
 import type { AudioFeatures, HarmonicContext, VisualKnobs } from '../../audio/types';
+import { DEFAULT_KNOBS } from '../../audio/types';
 import type { FluidState } from '../FluidField';
 import type { VisualForm } from '../VisualForm';
 import { resolveVisualKnobs, type VisualKnobParams } from '../VisualKnobParams';
@@ -61,7 +62,7 @@ export class ExtrusionField {
   private breathe = 0.55;
   private time = 0;
   private swell = 0;
-  private params = resolveVisualKnobs({ grain: 0.45, ripple: 0.5, drift: 0.4, focus: 0.28 });
+  private params = resolveVisualKnobs(DEFAULT_KNOBS.visual);
 
   constructor(parent: THREE.Group) {
     this.material = createMilkyMaterial() as MilkyMaterial;
@@ -116,7 +117,8 @@ export class ExtrusionField {
     mat.time.value = this.time;
     mat.grain.value = 0.02 + knobs.grain * 0.045;
     mat.milky.value = 0.45 + state.ghostMix + knobs.drift * 0.35;
-    mat.fogDensity.value = 0.032 + knobs.drift * 0.04 + state.ghostMix * 0.02;
+    mat.fogDensity.value =
+      (0.032 + knobs.drift * 0.04 + state.ghostMix * 0.02) * (0.6 + knobs.fog * 0.8);
     mat.uPresence.value = 0.18 + balance.bodyWeight * 0.95;
 
     for (const strand of this.strands) {

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createNoise2D } from 'simplex-noise';
 import type { AudioFeatures, HarmonicContext, MovementPhase, VisualKnobs } from '../../audio/types';
+import { DEFAULT_KNOBS } from '../../audio/types';
 import { TAU } from '../AudioFeatures';
 import type { FluidState } from '../FluidField';
 import { resolveVisualKnobs, type VisualKnobParams } from '../VisualKnobParams';
@@ -70,7 +71,7 @@ export class GhostField {
   private rippleT = 0;
   private lastCadenceRipple = 0;
   private cadenceWaveRadius = 0;
-  private params = resolveVisualKnobs({ grain: 0.45, ripple: 0.5, drift: 0.4, focus: 0.28 });
+  private params = resolveVisualKnobs(DEFAULT_KNOBS.visual);
   private theme: SceneTheme = 'light';
   /** Art Director fog scaling (1 = neutral); see ArtDirectorSkill */
   fogMultiplier = 1;

@@ -51,6 +51,11 @@ body {
   gap: 12px;
 }
 
+#rail-right-toggle {
+  display: inline-flex;
+  gap: 6px;
+}
+
 .theme-toggle {
   font-family: inherit;
   font-size: 9px;
@@ -205,6 +210,16 @@ body[data-mode='drift'] .rail {
   grid-template-columns: repeat(2, 1fr);
   gap: 20px 16px;
   justify-items: center;
+}
+
+/* Nine audio knobs need three columns to keep the rail height in check. */
+.knob-grid--three {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px 6px;
+}
+
+.knob-grid--three .knob {
+  width: 66px;
 }
 
 .knob {
@@ -410,6 +425,14 @@ body[data-mode='drift'] .rail {
 
   .knob-grid {
     gap: 16px 10px;
+  }
+
+  .knob-grid--three {
+    gap: 14px 4px;
+  }
+
+  .knob-grid--three .knob {
+    width: 58px;
   }
 }
 

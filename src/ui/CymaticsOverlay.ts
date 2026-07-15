@@ -1,4 +1,8 @@
 import type { AudioFeatures, HarmonicContext, MovementPhase } from '../audio/types';
+import type { LastTouchedKnob } from './Controls';
+
+/** How long a touched knob's label/value replaces the KEY line. */
+const TOUCH_ECHO_MS = 1500;
 
 const PHASE_LABELS: Record<MovementPhase, string> = {
   drift: 'HAZE',
@@ -77,7 +81,11 @@ export class CymaticsOverlay {
     this.element.classList.add('visible');
   }
 
-  update(features: AudioFeatures, harmonic: HarmonicContext): void {
+  update(
+    features: AudioFeatures,
+    harmonic: HarmonicContext,
+    lastTouched: LastTouchedKnob | null = null,
+  ): void {
     const now = performance.now();
     const dt = Math.min((now - this.lastNow) / 1000, 0.05);
     this.lastNow = now;
@@ -88,10 +96,16 @@ export class CymaticsOverlay {
     this.mids += (features.mids - this.mids) * k;
     this.highs += (features.highs - this.highs) * k;
 
-    this.draw(harmonic);
+    const touch =
+      lastTouched &&
+      lastTouched.section === 'sound' &&
+      now - lastTouched.at < TOUCH_ECHO_MS
+        ? lastTouched
+        : null;
+    this.draw(harmonic, touch);
   }
 
-  private draw(harmonic: HarmonicContext): void {
+  private draw(harmonic: HarmonicContext, touch: LastTouchedKnob | null): void {
     const c = this.ctx;
     c.clearRect(0, 0, W, H);
 
@@ -145,14 +159,25 @@ export class CymaticsOverlay {
 
     this.drawBands(WAVE_H + 32);
 
-    // Key / mode line.
-    const key = `${harmonic.root.toUpperCase()} ${harmonic.mode.toUpperCase()}`;
-    c.fillStyle = this.palette.muted;
-    c.textAlign = 'left';
-    c.fillText('KEY', 2, WAVE_H + 48);
-    c.fillStyle = this.palette.text;
-    c.textAlign = 'right';
-    c.fillText(`${key} · ${harmonic.chordFunction.toUpperCase()}`, W - 2, WAVE_H + 48);
+    // Key / mode line — briefly replaced by the knob being dragged so
+    // calibration has a console echo next to the sound it changes.
+    if (touch) {
+      c.fillStyle = this.palette.muted;
+      c.textAlign = 'left';
+      c.fillText('SET', 2, WAVE_H + 48);
+      c.fillStyle = this.palette.text;
+      c.textAlign = 'right';
+      const pct = String(Math.round(touch.value * 100)).padStart(2, '0');
+      c.fillText(`${touch.label.toUpperCase()} ${pct}`, W - 2, WAVE_H + 48);
+    } else {
+      const key = `${harmonic.root.toUpperCase()} ${harmonic.mode.toUpperCase()}`;
+      c.fillStyle = this.palette.muted;
+      c.textAlign = 'left';
+      c.fillText('KEY', 2, WAVE_H + 48);
+      c.fillStyle = this.palette.text;
+      c.textAlign = 'right';
+      c.fillText(`${key} · ${harmonic.chordFunction.toUpperCase()}`, W - 2, WAVE_H + 48);
+    }
 
     this.drawEnsemble(WAVE_H + 64, harmonic);
   }

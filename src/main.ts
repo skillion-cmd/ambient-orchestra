@@ -11,6 +11,8 @@ import { PerfMonitor } from './diagnostics/PerfMonitor';
 import { applyUiTheme, loadStoredTheme, storeTheme } from './visual/ScenePalette';
 import { loadStoredKnobs, loadStoredMode, storeKnobs, storeMode, type AppMode } from './ui/AppMode';
 import { ModeToggle } from './ui/ModeToggle';
+import { VisualModeToggle } from './ui/VisualModeToggle';
+import { loadStoredVisualMode } from './visual/VisualMode';
 
 const initialTheme = loadStoredTheme();
 applyUiTheme(initialTheme);
@@ -90,6 +92,11 @@ const themeToggle = new ThemeToggle(initialTheme, (theme) => {
 });
 rightToggleSlot.appendChild(themeToggle.element);
 
+const visualModeToggle = new VisualModeToggle(loadStoredVisualMode(), (visualMode) => {
+  visualizer?.setVisualMode(visualMode);
+});
+rightToggleSlot.appendChild(visualModeToggle.element);
+
 function setMode(next: AppMode): void {
   mode = next;
   document.body.dataset.mode = next;
@@ -131,7 +138,7 @@ function loop(now: number): void {
     const visualReadout = visualizer.getReadoutState(harmonic);
     sessionReadout.update(audioEngine.getMovementReadoutState());
     visualizer.update(features, dt, controls.getKnobs().visual, harmonic, audioEngine.getSpectrum());
-    cymaticsOverlay.update(features, harmonic);
+    cymaticsOverlay.update(features, harmonic, controls.getLastTouched());
     visualScope.update(visualReadout, controls.getKnobs().visual, lastArt);
 
     perfMonitor.frame(dtMs, {

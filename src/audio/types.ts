@@ -107,6 +107,12 @@ export interface SoundKnobs {
   memory: number;
   entropy: number;
   pulse: number;
+  /** Sub — foundation layer weight (sub drone + deep pressure). */
+  foundation: number;
+  /** Stereo image: 0 = mono-ish/intimate, 1 = wide/enveloping. */
+  width: number;
+  /** Air/room-tone/granular texture layer weight. */
+  texture: number;
 }
 
 export interface VisualKnobs {
@@ -115,6 +121,10 @@ export interface VisualKnobs {
   drift: number;
   /** 0 = ghost-heavy (70/30), 0.5 = even, 1 = body-heavy (30/70) */
   focus: number;
+  /** Ink-trail persistence: 0 = crisp, 1 = long streaks. */
+  trails: number;
+  /** Fog depth override blended over the art director's phase breathing. */
+  fog: number;
 }
 
 export interface AppKnobs {
@@ -122,6 +132,8 @@ export interface AppKnobs {
   visual: VisualKnobs;
 }
 
+// New knobs default to 0.5 and every formula they feed is neutral at 0.5,
+// so calibrations saved before they existed sound and look identical.
 export const DEFAULT_KNOBS: AppKnobs = {
   sound: {
     warmth: 0.55,
@@ -130,8 +142,11 @@ export const DEFAULT_KNOBS: AppKnobs = {
     memory: 0.45,
     entropy: 0.4,
     pulse: 0.5,
+    foundation: 0.5,
+    width: 0.5,
+    texture: 0.5,
   },
-  visual: { grain: 0.45, ripple: 0.5, drift: 0.4, focus: 0.28 },
+  visual: { grain: 0.45, ripple: 0.5, drift: 0.4, focus: 0.28, trails: 0.5, fog: 0.5 },
 };
 
 export interface AudioFeatures {

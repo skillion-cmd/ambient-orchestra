@@ -56,8 +56,18 @@ describe('knob persistence', () => {
 
   it('round-trips a full knob set', () => {
     const knobs = {
-      sound: { warmth: 0.1, space: 0.9, activity: 0.5, memory: 0.2, entropy: 0.3, pulse: 0.7 },
-      visual: { grain: 0.4, ripple: 0.6, drift: 0.5, focus: 0.8 },
+      sound: {
+        warmth: 0.1,
+        space: 0.9,
+        activity: 0.5,
+        memory: 0.2,
+        entropy: 0.3,
+        pulse: 0.7,
+        foundation: 0.6,
+        width: 0.35,
+        texture: 0.85,
+      },
+      visual: { grain: 0.4, ripple: 0.6, drift: 0.5, focus: 0.8, trails: 0.25, fog: 0.65 },
     };
     storeKnobs(knobs);
     expect(loadStoredKnobs()).toEqual(knobs);
@@ -68,16 +78,30 @@ describe('knob persistence', () => {
     expect(loadStoredKnobs()).toBeNull();
   });
 
-  it('rejects missing keys and out-of-range or non-finite values', () => {
+  it('backfills missing keys with defaults so old calibrations still load', () => {
+    // A blob saved before the foundation/width/texture and trails/fog knobs
+    // existed — every present value should survive, new keys get defaults.
+    const legacy = {
+      sound: { warmth: 0.1, space: 0.9, activity: 0.5, memory: 0.2, entropy: 0.3, pulse: 0.7 },
+      visual: { grain: 0.4, ripple: 0.6, drift: 0.5, focus: 0.8 },
+    };
+    (globals.localStorage as MemoryStorage).setItem('ao-knobs', JSON.stringify(legacy));
+    const loaded = loadStoredKnobs();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.sound.warmth).toBe(0.1);
+    expect(loaded!.visual.focus).toBe(0.8);
+    expect(loaded!.sound.foundation).toBe(DEFAULT_KNOBS.sound.foundation);
+    expect(loaded!.sound.width).toBe(DEFAULT_KNOBS.sound.width);
+    expect(loaded!.sound.texture).toBe(DEFAULT_KNOBS.sound.texture);
+    expect(loaded!.visual.trails).toBe(DEFAULT_KNOBS.visual.trails);
+    expect(loaded!.visual.fog).toBe(DEFAULT_KNOBS.visual.fog);
+  });
+
+  it('rejects out-of-range, non-finite, or wrong-type values', () => {
     const base = {
       sound: { ...DEFAULT_KNOBS.sound },
       visual: { ...DEFAULT_KNOBS.visual },
     };
-
-    const missing = JSON.parse(JSON.stringify(base)) as typeof base;
-    delete (missing.sound as Partial<typeof missing.sound>).warmth;
-    (globals.localStorage as MemoryStorage).setItem('ao-knobs', JSON.stringify(missing));
-    expect(loadStoredKnobs()).toBeNull();
 
     const outOfRange = { ...base, sound: { ...base.sound, space: 1.5 } };
     (globals.localStorage as MemoryStorage).setItem('ao-knobs', JSON.stringify(outOfRange));
