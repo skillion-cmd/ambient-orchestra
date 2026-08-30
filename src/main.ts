@@ -139,7 +139,7 @@ function loop(now: number): void {
     sessionReadout.update(audioEngine.getMovementReadoutState());
     visualizer.update(features, dt, controls.getKnobs().visual, harmonic, audioEngine.getSpectrum());
     cymaticsOverlay.update(features, harmonic, controls.getLastTouched());
-    visualScope.update(visualReadout, controls.getKnobs().visual, lastArt);
+    visualScope.update(visualReadout, controls.getKnobs().visual, lastArt, harmonic);
 
     perfMonitor.frame(dtMs, {
       audioRunning: audioEngine.isContextRunning(),

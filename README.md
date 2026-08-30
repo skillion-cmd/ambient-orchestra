@@ -1,8 +1,10 @@
 # Ambient Orchestra
 
-A procedural ambient synth orchestra with a layered monochrome visual field. Dozens of generative voices blend in and out of a slowly evolving harmonic field — no loops, no drums, no grid — paired with an audio-reactive ink-and-tube visual that drifts in and out of focus.
+A procedural ambient synth orchestra with a layered monochrome visual field. Dozens of generative voices blend in and out of a slowly evolving harmonic field, paired with an audio-reactive ink-and-tube visual that drifts in and out of focus.
 
-Inspired by the idea that good ambient music flows in and out of interest within a space — Eno by way of Floating Points, Bicep, Aphex Twin, Caribou, and Nosaj Thing.
+Pieces run anywhere from forty-five seconds to nearly half an hour, the layer holding the foreground rotates continuously, and roughly half of them carry no beat at all — the ones that do can put a soft kit right at the front. There is always a second room playing next door; walking through the doorway is how one piece becomes the next.
+
+Inspired by the idea that good ambient music flows in and out of interest within a space — Eno by way of Floating Points, Bicep, Aphex Twin, Caribou, and Nosaj Thing — and by the way the transition spaces at Paradiso blurred one room's set into another's.
 
 ## Features
 
@@ -12,6 +14,10 @@ Inspired by the idea that good ambient music flows in and out of interest within
 - **Conductor + harmonic field** — Markov mode shifts, chord pools, dream melody phrases with recall, ensemble gestures
 - **Conductor Skill (autonomous)** — a creative-direction layer over the technical conductor: shapes a session-wide **intensity arc** and a per-phase **stereo image** (intimate in drift/exhale, enveloping in bloom/hang)
 - **Movement arc** — six phases per movement (Heat Haze → Gather → Bloom → Hang → Morph → Exhale) with a bar-synced clock
+- **Duration classes** — every movement draws a length: `fragment` (45–95s), `short`, `standard`, `long`, or a rare `epic` of 20–28 minutes, held back until enough pieces have passed that arriving at one still means something. Phase timelines compress for a fragment and gain a third crest for the long forms
+- **Foreground rotation** — a focus point wanders a layer space so pad, melody, air, sub and pulse trade the front of the mix continuously; whichever layer is nearest sits at full presence, the rest recede without ever dropping out
+- **The room next door** — a second generative engine in its own key, behind a lowpass wall and a distance send. A listener walk drifts toward it and back; crossing the threshold trades the two rooms
+- **Pulse, sometimes** — a soft kit (euclidean kick, shaker and woody click, swung and humanised) on its own dry bus, on the movements that draw one
 - **Phrase-aligned automation** — autonomous knob drift locks to 8/16-bar boundaries and moves in coordinated clusters, so the piece reads as sections rather than arrhythmic drift
 - **Flourishes throughout** — sparkle runs and melodic flurries recur on a cadence that ebbs and flows within each movement (denser in bloom/hang, sparser in the troughs)
 - **New textures** — a Bicep/Caribou-style felt sub **pulse** (bloom/hang) and Aphex/Nosaj-style **granular degradation** (dissolve/exhale)
@@ -57,6 +63,17 @@ npm run dev
 ```
 
 Open **http://localhost:5173/** and click **Click to begin** to start audio.
+
+Movements draw their length and their pulse profile at random, so waiting for a
+particular one is impractical. Two dev-only query params force the draw:
+
+- `?scale=fragment` (or `short`, `standard`, `long`, `epic`) — pins every
+  movement to that duration class, the only way to hear a 45-second fragment or
+  a 25-minute epic on demand.
+- `?pulse=kit` (or `felt`, `silent`) — pins the pulse profile. Half of movements
+  carry no beat and a fragment never gets a kit, so this is how you hear one.
+
+They compose: `?scale=long&pulse=kit`.
 
 ## Production build
 
@@ -124,7 +141,8 @@ Unit tests cover music theory helpers and harmonic field transitions.
 ```
 src/
   audio/          Conductor, ConductorSkill, HarmonicField, ConductorFx,
-                  MusicalClock, voices, clips
+                  MusicalClock, Movement, LayerPresence, RoomWalk,
+                  NeighbourRoom, voices, clips
   visual/         Visualizer, ArtDirectorSkill, FluidField, LayerBalance,
                   ScenePalette
   visual/three/   GhostField, ExtrusionField, TrailPass, ghost/milky shaders
@@ -135,7 +153,10 @@ src/
 
 ## Design notes
 
-- No percussion — interest comes from harmonic color, texture, ensemble gestures, and the recurring flourishes
+- **Percussion is an event, not a bed** — roughly half of movements draw a silent pulse profile and never hear one; the rest get either the felt-not-heard sub heartbeat or a full kit. A fragment never gets a kit: there is no room to establish a pattern and leave again
+- **Duration is structure** — a one-minute fragment next to a twenty-five-minute epic is what makes a sequence read as composed rather than generated, so the length of a piece is drawn before its shape is
+- **Swell is balance, not volume** — the ambient curves carry everything one minute and sit barely audible under a melody or a texture the next. The foreground rotates; the front is never empty
+- **Two rooms, always** — the neighbouring room runs its own key, its own arc and its own voices behind a wall filter. Crossing the threshold hands its key to the main room and gives the neighbour a new one, and the swap happens at the point of deepest blur so it lands inside the smear rather than as a cut
 - Voices never all play at full volume simultaneously
 - **Two creative roles:** the Conductor Skill directs the audio (intensity, stereo image, flourish cadence) and the Art Director Skill directs the visuals (fog, focus, mood, constellations) — both read the same shared harmonic context, so picture and sound stay in step
 - **Visual palette:** strict depth-pass monochrome. Light field (`#ececec`) with dark ink ghosts is the default; dark field inverts to luminous ghosts on a deep `#08080f` ground, with bodies tinted into the same blue-black family

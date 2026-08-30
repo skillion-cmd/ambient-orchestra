@@ -37,6 +37,12 @@ export class MusicalClock {
   beatPulse = 0;
   /** Calibrate mode: tempo follows the knob, phases barely sway it. */
   steadyTempo = false;
+  /**
+   * A follower reads the transport but never drives it. The neighbouring
+   * room needs its own bar and beat counters — it runs its own arc — but
+   * only one clock may set the tempo or the two fight over it.
+   */
+  follow = false;
 
   init(): void {
     Tone.getTransport().bpm.value = 58;
@@ -44,11 +50,13 @@ export class MusicalClock {
   }
 
   update(_dt: number, phase: MovementPhase, knobs: SoundKnobs): void {
-    const pulseKnob = knobs.pulse ?? 0.5;
-    const targetBpm = bpmFor(phase, pulseKnob, this.steadyTempo);
-    if (Math.abs(targetBpm - this.lastTargetBpm) > 0.25) {
-      Tone.getTransport().bpm.rampTo(targetBpm, 2);
-      this.lastTargetBpm = targetBpm;
+    if (!this.follow) {
+      const pulseKnob = knobs.pulse ?? 0.5;
+      const targetBpm = bpmFor(phase, pulseKnob, this.steadyTempo);
+      if (Math.abs(targetBpm - this.lastTargetBpm) > 0.25) {
+        Tone.getTransport().bpm.rampTo(targetBpm, 2);
+        this.lastTargetBpm = targetBpm;
+      }
     }
 
     const bpm = Tone.getTransport().bpm.value;

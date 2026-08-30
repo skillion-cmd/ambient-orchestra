@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 import { createClipVoices } from '../clips';
 import { isMelodyAccent } from '../HarmonicField';
 import type { HarmonicContext, SoundKnobs } from '../types';
-import { euclideanHit } from '../Euclidean';
+import { euclidean, euclideanHit } from '../Euclidean';
 import { VoiceBase } from '../VoiceBase';
 
 type Bus = Tone.ToneAudioNode;
@@ -1020,12 +1020,144 @@ export class GranularTexture extends VoiceBase {
   }
 }
 
+/**
+ * A soft kit that can actually carry a section — filtered kick, shaker and
+ * a woody click on rotating euclidean patterns, swung and humanised so it
+ * breathes rather than marches. Only movements drawn with a 'kit' pulse
+ * profile ever hear it; roughly half carry no beat at all.
+ */
+export class PulseKit extends VoiceBase {
+  private kick: Tone.MembraneSynth | null = null;
+  private shaker: Tone.NoiseSynth | null = null;
+  private shakerFilter: Tone.Filter | null = null;
+  private click: Tone.MembraneSynth | null = null;
+  private clickFilter: Tone.Filter | null = null;
+  private loop: Tone.Loop | null = null;
+
+  private kickPattern: boolean[] = [];
+  private shakerPattern: boolean[] = [];
+  private clickPattern: boolean[] = [];
+  private step = 0;
+  private bars = 0;
+  private swing = 0.4;
+
+  constructor(dest: Bus) {
+    super('pulseKit', dest, 0.5);
+    this.fadeSpeed = 0.014;
+  }
+
+  onEnter(): void {
+    this.clearPendingDispose();
+
+    this.kick = new Tone.MembraneSynth({
+      pitchDecay: 0.05,
+      octaves: 3,
+      envelope: { attack: 0.001, decay: 0.24, sustain: 0, release: 0.12 },
+    }).connect(this.output);
+
+    this.shakerFilter = new Tone.Filter(5200, 'highpass', -24).connect(this.output);
+    this.shaker = new Tone.NoiseSynth({
+      noise: { type: 'pink' },
+      envelope: { attack: 0.001, decay: 0.035, sustain: 0 },
+    }).connect(this.shakerFilter);
+
+    this.clickFilter = new Tone.Filter(900, 'bandpass', -12).connect(this.output);
+    this.click = new Tone.MembraneSynth({
+      pitchDecay: 0.008,
+      octaves: 1,
+      envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.03 },
+    }).connect(this.clickFilter);
+
+    this.step = 0;
+    this.bars = 0;
+    this.rollPatterns();
+    this.loop = new Tone.Loop((time) => this.tick(time), '16n').start('+0.1');
+  }
+
+  /** Fresh euclidean spreads, re-rolled every eight bars so it evolves. */
+  private rollPatterns(): void {
+    const kickPulses = 3 + Math.floor(Math.random() * 3); // 3–5
+    const shakerPulses = 7 + Math.floor(Math.random() * 5); // 7–11
+    const clickPulses = 2 + Math.floor(Math.random() * 2); // 2–3
+    this.kickPattern = euclidean(kickPulses, 16, Math.floor(Math.random() * 4));
+    this.shakerPattern = euclidean(shakerPulses, 16, Math.floor(Math.random() * 16));
+    this.clickPattern = euclidean(clickPulses, 16, 3 + Math.floor(Math.random() * 10));
+    this.swing = 0.25 + Math.random() * 0.4;
+  }
+
+  private tick(time: number): void {
+    const step = this.step % 16;
+    if (step === 0) {
+      this.bars++;
+      if (this.bars % 8 === 0) this.rollPatterns();
+    }
+    this.step++;
+
+    // Swing the offbeat sixteenths, then humanise everything a little, so
+    // no two hits land on exactly the same part of the grid.
+    const sixteenth = Tone.Time('16n').toSeconds();
+    const swung = step % 2 === 1 ? this.swing * 0.3 * sixteenth : 0;
+    const at = time + swung + (Math.random() - 0.5) * 0.016;
+
+    const rootMidi = this.harmonicContext?.rootMidi ?? 45;
+
+    if (euclideanHit(this.kickPattern, step, 0.94)) {
+      const pitch = Tone.Frequency(rootMidi - 24, 'midi').toFrequency();
+      this.kick?.triggerAttackRelease(pitch, '16n', at, 0.72 + Math.random() * 0.16);
+    }
+
+    if (euclideanHit(this.shakerPattern, step, 0.8)) {
+      // Accent the downbeat-adjacent steps; the rest stay ghosted.
+      const accent = step % 4 === 0 ? 0.28 : 0.1 + Math.random() * 0.12;
+      this.shaker?.triggerAttackRelease('64n', at, accent);
+    }
+
+    if (euclideanHit(this.clickPattern, step, 0.6)) {
+      const pitch = Tone.Frequency(rootMidi + 12, 'midi').toFrequency();
+      this.click?.triggerAttackRelease(pitch, '32n', at + 0.004, 0.18 + Math.random() * 0.1);
+    }
+  }
+
+  onUpdate(): void {}
+
+  onExit(): void {
+    this.loop?.stop().dispose();
+    this.loop = null;
+    this.scheduleDispose(
+      [this.kick, this.shaker, this.shakerFilter, this.click, this.clickFilter],
+      0.5,
+    );
+    this.kick = null;
+    this.shaker = null;
+    this.shakerFilter = null;
+    this.click = null;
+    this.clickFilter = null;
+  }
+}
+
+/**
+ * The set the neighbouring room plays. Deliberately small and all on one
+ * bus: it is heard through a wall, so detail is wasted, and it has to cost
+ * almost nothing on top of a full engine and a WebGL field. No HRTF
+ * panners here for the same reason.
+ */
+export function createRoomVoices(bus: Bus): VoiceBase[] {
+  return [
+    new HarmonyBed(bus),
+    new GlassPad(bus),
+    new AirTexture(bus),
+    new RoomTone(bus),
+    new SlowArp(bus),
+  ];
+}
+
 export function createAllVoices(
   padBus: Bus,
   melodyBus: Bus,
   airBus: Bus,
   subBus: Bus,
   foundationBus: Bus = padBus,
+  pulseBus: Bus = padBus,
 ): VoiceBase[] {
   return [
     new OrchestraWhole(padBus),
@@ -1047,6 +1179,7 @@ export function createAllVoices(
     new MelodicFlurry(melodyBus),
     new SparkRun(melodyBus),
     new RhythmicPulse(padBus),
+    new PulseKit(pulseBus),
     new GranularTexture(airBus),
     ...createClipVoices(padBus, melodyBus, airBus),
   ];

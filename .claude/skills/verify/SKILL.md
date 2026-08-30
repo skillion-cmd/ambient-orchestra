@@ -43,6 +43,12 @@ Flows that matter:
   ("Currents" when in field mode).
 - Seed localStorage via `page.addInitScript` to test stored-calibration
   paths (`ao-knobs`, `ao-mode`, `ao-theme`, `ao-visual-mode`).
+- Movements draw a random length and pulse profile, so most paths are
+  unreachable by waiting. Force them: `?scale=fragment|short|standard|long|epic`
+  and `?pulse=silent|felt|kit` (they compose). `?scale=fragment` also gets you
+  a doorway crossing every ~80s — the walk into the neighbouring room is
+  forced as each movement runs out, and shows up as `between rooms` in the
+  left-rail sub-line, followed by a new movement index.
 
 Screenshots after ~5s of runtime give the trail buffer time to develop —
 a fresh switch looks empty.
@@ -50,5 +56,9 @@ a fresh switch looks empty.
 ## Gotchas
 
 - `/favicon.ico` 404s in the console — pre-existing, ignore.
+- The rails are hidden in Drift mode (`body[data-mode='drift'] .rail`), so an
+  element screenshot of `#rail-left` hangs until it times out. Click
+  `#mode-toggle`'s Calibrate button first. Reading rail text via
+  `page.evaluate` works either way — hidden elements are still in the DOM.
 - Visuals parented inside `worldGroup` are scaled ~2.3x; scene-level
   planes must be sized to the camera frustum (fov 42, camera z ≈ 16 ± drift).

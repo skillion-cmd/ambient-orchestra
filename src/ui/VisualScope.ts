@@ -1,11 +1,11 @@
-import type { VisualKnobs } from '../audio/types';
+import type { HarmonicContext, VisualKnobs } from '../audio/types';
 import type { VisualReadoutState } from '../visual/VisualReadout';
 import { FORM_LABELS } from '../visual/VisualForm';
 import { resolveLayerBalance } from '../visual/LayerBalance';
 import type { ArtDirectorDirectives } from '../visual/ArtDirectorSkill';
 
 const W = 220;
-const H = 150;
+const H = 182;
 
 interface Palette {
   text: string;
@@ -33,6 +33,7 @@ export class VisualScope {
   private ghost = 0.5;
   private mood = 0;
   private fog = 1;
+  private room = 0;
 
   constructor(parent: HTMLElement, private readonly onNextForm: () => void) {
     this.element = document.createElement('div');
@@ -74,7 +75,12 @@ export class VisualScope {
     this.palette = this.readPalette();
   }
 
-  update(visual: VisualReadoutState, knobs: VisualKnobs, art: ArtDirectorDirectives): void {
+  update(
+    visual: VisualReadoutState,
+    knobs: VisualKnobs,
+    art: ArtDirectorDirectives,
+    harmonic: HarmonicContext,
+  ): void {
     this.formBtn.textContent = FORM_LABELS[visual.form];
     this.formHint.textContent = visual.awaitingTarget ? `→ ${FORM_LABELS[visual.targetForm]}` : '';
     this.formMeta.textContent = String(visual.particleCount);
@@ -88,6 +94,7 @@ export class VisualScope {
     this.ghost += (balance.ghostWeight / (balance.ghostWeight + balance.bodyWeight) - this.ghost) * k;
     this.mood += (art.moodBlend - this.mood) * k;
     this.fog += (art.fogMultiplier - this.fog) * k;
+    this.room += (harmonic.roomPosition - this.room) * k;
 
     this.draw();
   }
@@ -102,6 +109,7 @@ export class VisualScope {
     this.splitBar('LAYER', 50, this.ghost, 'GHOST', 'BODY');
     this.splitBar('MOOD', 82, (this.mood + 1) / 2, 'COOL', 'WARM');
     this.bar('FOG', 114, Math.max(0, Math.min(1, (this.fog - 0.7) / 0.6)), false);
+    this.splitBar('ROOM', 146, this.room, 'HERE', 'NEXT');
   }
 
   /** Left-to-right fill bar. */

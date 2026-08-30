@@ -4,12 +4,18 @@ import type { ConductorFx } from './ConductorFx';
 import { createAllVoices } from './voices';
 import type { AppKnobs, AudioFeatures } from './types';
 import { DEFAULT_KNOBS } from './types';
+import { NEUTRAL_PRESENCE, type LayerPresence } from './LayerPresence';
+import type { ConductorDirectives } from './ConductorSkill';
+import { RoomWalk } from './RoomWalk';
+import { NeighbourRoom } from './NeighbourRoom';
 
 export class AudioEngine {
   private readonly padBus: Tone.Gain;
   private readonly melodyBus: Tone.Gain;
   private readonly airBus: Tone.Gain;
   private readonly subBus: Tone.Gain;
+  private readonly pulseBus: Tone.Gain;
+  private readonly pulseSend: Tone.Gain;
   private readonly foundationBus: Tone.Gain;
   private readonly masterBus: Tone.Gain;
   private readonly intensityGain: Tone.Gain;
@@ -20,9 +26,22 @@ export class AudioEngine {
   private readonly widener: Tone.StereoWidener;
   private readonly tiltEQ: Tone.EQ3;
   private readonly highpass: Tone.Filter;
+  private readonly roomWall: Tone.Filter;
+  private readonly roomGain: Tone.Gain;
+  private readonly roomWalk = new RoomWalk();
+  private neighbour: NeighbourRoom | null = null;
+  private lastRoomCutoff = -1;
+  private lastRoomGain = -1;
+  /** Room channels published to the visual side through HarmonicContext. */
+  private roomPosition = 0;
+  private roomCorridor = 0;
+  private doorwayPulse = 0;
+  /** Movement index whose end-of-piece crossing has already been cued. */
+  private forcedForMovement = -1;
   private readonly analyser: Tone.Analyser;
   private readonly limiter: Tone.Limiter;
   private readonly subLimiter: Tone.Limiter;
+  private readonly pulseLimiter: Tone.Limiter;
   private readonly voices;
   readonly conductor: Conductor;
   private knobs: AppKnobs = {
@@ -44,6 +63,13 @@ export class AudioEngine {
   /** Conductor-driven stereo image (0 = mono, 1 = normal, 1.5 = wide). */
   private masterStereoWidth = 1;
   private readonly baseWidth = 0.55;
+  /**
+   * Bus gains as the knobs alone would set them. The foreground rotation
+   * multiplies these rather than overwriting them, so a Density push and a
+   * swell compose instead of clobbering each other frame by frame.
+   */
+  private baseBusGains: LayerPresence = { pad: 0.7, melody: 0.62, air: 0.35, sub: 0.42, pulse: 0.8 };
+  private layerPresence: LayerPresence = { ...NEUTRAL_PRESENCE };
 
   constructor() {
     this.padBus = new Tone.Gain(0.72);
@@ -75,7 +101,14 @@ export class AudioEngine {
     this.masterBus.connect(this.intensityGain);
     this.intensityGain.connect(this.glue);
 
-    this.glue.connect(this.highpass);
+    // The room you are standing in also gets muffled as you drift toward
+    // the doorway — without this the neighbour would just fade up over an
+    // undimmed main mix, which reads as a layer rather than as a wall.
+    this.roomWall = new Tone.Filter(18000, 'lowpass', -24);
+    this.roomGain = new Tone.Gain(1);
+    this.glue.connect(this.roomWall);
+    this.roomWall.connect(this.roomGain);
+    this.roomGain.connect(this.highpass);
     this.highpass.connect(this.delay);
     this.delay.connect(this.reverb);
     this.reverb.connect(this.widener);
@@ -95,6 +128,19 @@ export class AudioEngine {
     this.subBus.connect(this.subLimiter);
     this.subLimiter.connect(this.tiltEQ);
 
+    // Dry pulse path. A 14s reverb turns a kit to mush, and the glue
+    // compressor would let every kick duck the whole field, so the beat
+    // takes the same shortcut as the sub — straight to the tilt EQ, with
+    // its own limiter. A small parallel send into the reverb keeps it
+    // sitting in the room rather than pasted on top of it.
+    this.pulseBus = new Tone.Gain(0.8);
+    this.pulseLimiter = new Tone.Limiter(-6);
+    this.pulseBus.connect(this.pulseLimiter);
+    this.pulseLimiter.connect(this.tiltEQ);
+    this.pulseSend = new Tone.Gain(0.12);
+    this.pulseBus.connect(this.pulseSend);
+    this.pulseSend.connect(this.reverb);
+
     // Foundation weight: the Sub knob scales the sub drone (into the pad
     // bus) together with the deep-pressure path above.
     this.foundationBus = new Tone.Gain(1);
@@ -106,6 +152,7 @@ export class AudioEngine {
       this.airBus,
       this.subBus,
       this.foundationBus,
+      this.pulseBus,
     );
 
     const fx: ConductorFx = {
@@ -115,6 +162,9 @@ export class AudioEngine {
       triggerExhaleVacuum: () => this.triggerExhaleVacuum(),
     };
     this.conductor = new Conductor(this.voices, this.knobs.sound, fx);
+    // The room next door: dry into the master bus, with its own distance
+    // send into the shared reverb.
+    this.neighbour = new NeighbourRoom(this.masterBus, this.reverb);
     this.setupVisibilityResume();
   }
 
@@ -140,6 +190,67 @@ export class AudioEngine {
     if (!this.running) return;
     this.conductor.setKnobs(this.knobs.sound);
     this.conductor.update(dt);
+    this.updateRooms(dt);
+  }
+
+  /**
+   * Advance the listener's walk between the two rooms and apply what that
+   * does to each of them.
+   *
+   * A crossing is timed to land as a movement runs out, so arriving in the
+   * other room *is* how one piece becomes the next: the main engine takes
+   * the key you had been hearing through the wall, and the neighbour moves
+   * on to a fresh one, both while the threshold blur is at its deepest.
+   */
+  private updateRooms(dt: number): void {
+    const neighbour = this.neighbour;
+    if (!neighbour) return;
+
+    const ctx = this.conductor.getHarmonicContext();
+    this.roomWalk.setScale(ctx.movementScale);
+
+    const remaining = ctx.movementDurationSec - ctx.movementElapsedSec;
+    const cue = Math.min(60, ctx.movementDurationSec * 0.35);
+    if (remaining <= cue && this.forcedForMovement !== ctx.movementIndex) {
+      this.forcedForMovement = ctx.movementIndex;
+      this.roomWalk.forceCrossing();
+    }
+
+    const room = this.roomWalk.update(dt);
+    this.roomPosition = room.position;
+    this.roomCorridor = room.corridor;
+    this.doorwayPulse = Math.max(0, this.doorwayPulse - dt * 0.5);
+
+    if (room.doorway) {
+      this.doorwayPulse = 1;
+      this.conductor.crossIntoRoom(neighbour.currentSeed());
+      neighbour.reseed(this.knobs.sound);
+    }
+
+    this.applyRoomAudibility(room.here);
+    neighbour.update(dt, this.knobs.sound);
+    neighbour.applyAudibility(room.next);
+  }
+
+  /** Muffle and dim the room you're standing in as you drift out of it. */
+  private applyRoomAudibility(a: { gain: number; cutoff: number }): void {
+    if (Math.abs(a.gain - this.lastRoomGain) > 0.004) {
+      this.lastRoomGain = a.gain;
+      this.roomGain.gain.rampTo(a.gain, 1.5);
+    }
+    if (Math.abs(a.cutoff - this.lastRoomCutoff) > 15) {
+      this.lastRoomCutoff = a.cutoff;
+      this.roomWall.frequency.rampTo(a.cutoff, 1.5);
+    }
+  }
+
+  /** Room channels for the visual side — read by getHarmonicContext. */
+  private roomChannels() {
+    return {
+      roomPosition: this.roomPosition,
+      roomCorridor: this.roomCorridor,
+      doorwayPulse: this.doorwayPulse,
+    };
   }
 
   setKnobs(knobs: AppKnobs): void {
@@ -164,9 +275,10 @@ export class AudioEngine {
   }
 
   /** Apply autonomous Conductor directives — call each frame while running. */
-  applyDirectives(d: { masterIntensity: number; stereoWidth: number }): void {
+  applyDirectives(d: ConductorDirectives): void {
     this.setMasterIntensity(d.masterIntensity);
     this.setStereoWidth(d.stereoWidth);
+    this.applyLayerPresence(d.layerPresence);
   }
 
   /** Session-level dynamics. Ramps a dedicated gain so it never fights gestures. */
@@ -286,12 +398,47 @@ export class AudioEngine {
     const melodyTrim = 0.75 + s.memory * 0.55;
     const padTrim = 0.93 + s.activity * 0.2;
     const airTrim = 0.79 + s.activity * 0.6;
-    this.melodyBus.gain.rampTo((0.62 + (1 - s.space) * 0.16) * melodyTrim, ramp);
-    this.padBus.gain.rampTo((0.7 + s.space * 0.1) * padTrim, ramp);
-    this.airBus.gain.rampTo((0.1 + s.texture * 0.5) * airTrim, ramp);
+    this.baseBusGains = {
+      melody: (0.62 + (1 - s.space) * 0.16) * melodyTrim,
+      pad: (0.7 + s.space * 0.1) * padTrim,
+      air: (0.1 + s.texture * 0.5) * airTrim,
+      sub: 0.15 + s.foundation * 0.54,
+      pulse: 0.55 + s.pulse * 0.5,
+    };
+    this.applyBusGains(ramp);
 
-    this.subBus.gain.rampTo(0.15 + s.foundation * 0.54, ramp);
     this.foundationBus.gain.rampTo(Math.min(1.25, 0.3 + s.foundation * 1.4), ramp);
+  }
+
+  /**
+   * Foreground rotation from the Conductor Skill — called each frame, but
+   * the rotation is slow, so skip the write until it has actually moved.
+   * Scheduling five ramps sixty times a second would swamp the param queue
+   * for changes nobody can hear.
+   */
+  applyLayerPresence(presence: LayerPresence, rampSec = 1.5): void {
+    const moved = (Object.keys(presence) as (keyof LayerPresence)[]).some(
+      (k) => Math.abs(presence[k] - this.layerPresence[k]) > 0.004,
+    );
+    if (!moved) return;
+    this.layerPresence = { ...presence };
+    this.applyBusGains(rampSec);
+  }
+
+  /**
+   * The single writer for the layer buses. Knob settings and the foreground
+   * rotation are two independent inputs, so both funnel through here and
+   * neither can stomp the other — the same composition the pan system uses
+   * for base pan, pan offset and stereo width.
+   */
+  private applyBusGains(rampSec: number): void {
+    const base = this.baseBusGains;
+    const p = this.layerPresence;
+    this.melodyBus.gain.rampTo(base.melody * p.melody, rampSec);
+    this.padBus.gain.rampTo(base.pad * p.pad, rampSec);
+    this.airBus.gain.rampTo(base.air * p.air, rampSec);
+    this.subBus.gain.rampTo(base.sub * p.sub, rampSec);
+    this.pulseBus.gain.rampTo(base.pulse * p.pulse, rampSec);
   }
 
   /** Knob-derived delay feedback — gesture restores must re-read this
@@ -383,7 +530,7 @@ export class AudioEngine {
   }
 
   getHarmonicContext() {
-    return this.conductor.getHarmonicContext();
+    return { ...this.conductor.getHarmonicContext(), ...this.roomChannels() };
   }
 
   requestNextPhase(): void {
@@ -405,6 +552,7 @@ export class AudioEngine {
 
   dispose(): void {
     if (this.spaceThrowTimeout) clearTimeout(this.spaceThrowTimeout);
+    this.neighbour?.dispose();
     Tone.getTransport().stop();
     this.running = false;
   }

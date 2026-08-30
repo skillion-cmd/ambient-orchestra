@@ -8,6 +8,13 @@ export interface MovementReadoutState {
   pendingMovementSkip: boolean;
 }
 
+/** Seconds as m:ss. */
+function clock(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds));
+  const mins = Math.floor(total / 60);
+  return `${mins}:${String(total % 60).padStart(2, '0')}`;
+}
+
 /** Audio-side session readout — movement, phase, progress. Lives in the left rail. */
 export class SessionReadout {
   readonly element: HTMLElement;
@@ -50,7 +57,11 @@ export class SessionReadout {
     this.movIndexEl.textContent = `M${String(harmonic.movementIndex + 1).padStart(2, '0')}`;
     this.phaseBtn.textContent = PHASE_LABELS[harmonic.movementPhase];
     this.movFill.style.width = `${movPct}%`;
-    this.movMeta.textContent = `${movPct}%`;
+    // Movements now run anywhere from 45 seconds to nearly half an hour, so
+    // a bare percentage says nothing about what kind of piece you're in.
+    this.movMeta.textContent = `${clock(harmonic.movementElapsedSec)}/${clock(
+      harmonic.movementDurationSec,
+    )}`;
 
     const busy = pendingMovementSkip || harmonicTransitioning;
     this.phaseBtn.disabled = busy;
@@ -59,8 +70,10 @@ export class SessionReadout {
       this.subEl.textContent = 'dissolving';
     } else if (harmonicTransitioning) {
       this.subEl.textContent = `crossfade ${Math.round(harmonicTransitionProgress * 100)}%`;
+    } else if (harmonic.roomCorridor > 0.3) {
+      this.subEl.textContent = 'between rooms';
     } else {
-      this.subEl.textContent = '';
+      this.subEl.textContent = harmonic.movementScale;
     }
   }
 
