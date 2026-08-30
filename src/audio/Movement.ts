@@ -238,11 +238,24 @@ export function pickPulseProfile(
  * single session. Absent in tests (no window) and in normal use.
  */
 export function readScaleOverride(): MovementScale | null {
+  return readOverride('scale', MOVEMENT_SCALES);
+}
+
+/**
+ * Dev-only pulse override — `?pulse=kit`. Half of movements draw a silent
+ * profile and a fragment never gets a kit, so without this the beat is hard
+ * to reach on purpose.
+ */
+export function readPulseOverride(): PulseProfile | null {
+  return readOverride('pulse', PULSE_PROFILES);
+}
+
+const PULSE_PROFILES: PulseProfile[] = ['silent', 'felt', 'kit'];
+
+function readOverride<T extends string>(key: string, allowed: readonly T[]): T | null {
   if (typeof window === 'undefined') return null;
-  const raw = new URLSearchParams(window.location.search).get('scale');
-  return raw && (MOVEMENT_SCALES as string[]).includes(raw)
-    ? (raw as MovementScale)
-    : null;
+  const raw = new URLSearchParams(window.location.search).get(key);
+  return raw && (allowed as readonly string[]).includes(raw) ? (raw as T) : null;
 }
 
 /** One generative "song" — anywhere from a 45-second fragment to 28 minutes. */

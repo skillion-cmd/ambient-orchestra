@@ -8,13 +8,14 @@ import {
   pickPhraseType,
 } from './MusicTheory';
 import {
+  EPIC_SPACING,
   Movement,
   pickMovementScale,
   pickMovementVariant,
   pickPulseProfile,
+  readPulseOverride,
   readScaleOverride,
 } from './Movement';
-import { EPIC_SPACING } from './Movement';
 import type {
   ChordFunction,
   HarmonicContext,
@@ -102,15 +103,23 @@ export class HarmonicField {
   private pendingPhraseCadence: MelodyPhraseType | null = null;
 
   constructor() {
-    // The dev override has to reach the first movement too, or verifying a
-    // fragment or an epic means waiting out a full-length one first.
-    const forced = readScaleOverride();
-    if (forced) {
+    // The dev overrides have to reach the first movement too, or verifying a
+    // fragment, an epic or a kit means waiting out a full-length movement
+    // that happened not to draw one.
+    const forcedScale = readScaleOverride();
+    const forcedPulse = readPulseOverride();
+    if (forcedScale || forcedPulse) {
+      const scale = forcedScale ?? 'standard';
       this.movement = new Movement(
         0,
-        pickMovementVariant('classic', forced),
-        forced,
-        pickPulseProfile(forced, DEFAULT_KNOBS.sound.pulse, DEFAULT_KNOBS.sound.activity),
+        pickMovementVariant('classic', scale),
+        scale,
+        forcedPulse ??
+          pickPulseProfile(
+            scale,
+            DEFAULT_KNOBS.sound.pulse,
+            DEFAULT_KNOBS.sound.activity,
+          ),
       );
       this.transitionSec = this.movement.transitionSec();
     }
@@ -241,7 +250,7 @@ export class HarmonicField {
       index,
       pickMovementVariant(this.movement.variant, scale),
       scale,
-      pickPulseProfile(scale, knobs.pulse, knobs.activity),
+      readPulseOverride() ?? pickPulseProfile(scale, knobs.pulse, knobs.activity),
     );
     this.transitionSec = this.movement.transitionSec();
 

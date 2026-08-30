@@ -64,10 +64,16 @@ npm run dev
 
 Open **http://localhost:5173/** and click **Click to begin** to start audio.
 
-Movements are drawn at random lengths, so waiting for a particular one is
-impractical. `?scale=fragment` (or `short`, `standard`, `long`, `epic`) forces
-every movement to that duration class — the only way to hear a 45-second
-fragment or a 25-minute epic on demand.
+Movements draw their length and their pulse profile at random, so waiting for a
+particular one is impractical. Two dev-only query params force the draw:
+
+- `?scale=fragment` (or `short`, `standard`, `long`, `epic`) — pins every
+  movement to that duration class, the only way to hear a 45-second fragment or
+  a 25-minute epic on demand.
+- `?pulse=kit` (or `felt`, `silent`) — pins the pulse profile. Half of movements
+  carry no beat and a fragment never gets a kit, so this is how you hear one.
+
+They compose: `?scale=long&pulse=kit`.
 
 ## Production build
 
