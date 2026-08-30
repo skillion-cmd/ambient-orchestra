@@ -34,8 +34,13 @@ describe('HarmonicField', () => {
     expect(field.isHarmonicTransitioning()).toBe(true);
     expect(field.consumeTransitionBloom()).toBe(false);
 
-    for (let i = 0; i < 520; i++) {
+    // The crossfade scales with the incoming movement's length now, so run
+    // until it settles rather than for a fixed window. The cap stays well
+    // under the shortest movement, so nothing can begin a second one here.
+    let steps = 0;
+    while (field.isHarmonicTransitioning() && steps < 1000) {
       field.advance(0.05, clock, KNOBS);
+      steps++;
     }
 
     expect(field.isHarmonicTransitioning()).toBe(false);

@@ -41,6 +41,7 @@ export class ArtDirectorSkill {
   private focusSnap = 0;
   private lastGestureId = -1;
   private lastCadence = 0;
+  private lastDoorway = 0;
   private lastPhase: MovementPhase | null = null;
   private constellationCooldown = 0;
 
@@ -48,8 +49,11 @@ export class ArtDirectorSkill {
     const profile = PHASE_PROFILES[ctx.movementPhase];
     const ease = 1 - Math.exp(-dt / 3.5);
 
-    // Fog eases toward the phase target, with a touch of breathing from audio.
-    const fogTarget = profile.fog * (1 - features.overall * 0.12);
+    // Fog eases toward the phase target, with a touch of breathing from
+    // audio. The threshold between rooms thickens it: in the corridor both
+    // atmospheres are half-present and neither is in focus.
+    const corridor = ctx.roomCorridor;
+    const fogTarget = profile.fog * (1 - features.overall * 0.12) * (1 + corridor * 0.5);
     this.fog += (fogTarget - this.fog) * ease;
 
     // Dreamlike focus: a slow sine oscillation around the phase bias, plus
@@ -59,15 +63,22 @@ export class ArtDirectorSkill {
 
     const ensembleSnap = ctx.gestureId !== this.lastGestureId && ctx.ensemblePulse > 0.4;
     const cadenceSnap = ctx.cadenceRipple > 0.65 && this.lastCadence <= 0.35;
-    if (ensembleSnap || cadenceSnap) {
-      this.focusSnap = (ensembleSnap ? 0.28 : 0.2) * (Math.random() > 0.5 ? 1 : -1);
+    // Walking through the doorway is the biggest snap the field gets — the
+    // moment the room you were in becomes the room you were listening to.
+    const doorwaySnap = ctx.doorwayPulse > 0.9 && this.lastDoorway <= 0.5;
+    if (ensembleSnap || cadenceSnap || doorwaySnap) {
+      const magnitude = doorwaySnap ? 0.42 : ensembleSnap ? 0.28 : 0.2;
+      this.focusSnap = magnitude * (Math.random() > 0.5 ? 1 : -1);
       this.oscPeriod = 30 + Math.random() * 60;
     }
+    this.lastDoorway = ctx.doorwayPulse;
     this.lastGestureId = ctx.gestureId;
     this.lastCadence = ctx.cadenceRipple;
     this.focusSnap *= Math.exp(-dt / 5); // drift back over ~5s
 
-    const focusTarget = profile.focusBias + osc + this.focusSnap;
+    // The corridor pulls focus toward the soft, ghost-heavy end — shapes
+    // stop resolving while you are between the two rooms.
+    const focusTarget = profile.focusBias + osc + this.focusSnap - corridor * 0.3;
     this.focusOffset += (focusTarget - this.focusOffset) * ease;
 
     // Palette mood from harmony: dominant/color tension cools, tonic warms;
@@ -88,6 +99,10 @@ export class ArtDirectorSkill {
         break;
     }
     moodTarget += (ctx.brightness - 0.5) * 0.4;
+    // Drift the palette toward neutral in the threshold: the harmony you're
+    // walking out of no longer owns the colour, and the one next door hasn't
+    // arrived yet.
+    moodTarget *= 1 - corridor * 0.65;
     this.mood += (Math.max(-1, Math.min(1, moodTarget)) - this.mood) * (1 - Math.exp(-dt / 6));
 
     // Constellation moments: fire on entering bloom, throttled.

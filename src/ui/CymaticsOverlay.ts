@@ -25,6 +25,7 @@ const GROUP_ORDER = [
   ['air', 'AIR'],
   ['foundation', 'FND'],
   ['flurry', 'FLR'],
+  ['pulse', 'PLS'],
   ['clips', 'CLP'],
 ] as const;
 

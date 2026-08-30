@@ -27,6 +27,7 @@ const VOICE_PANS: Record<string, number> = {
   washClip: 0.05,
   fieldRecording: 0.65,
   rhythmicPulse: 0,
+  pulseKit: 0,
   granularTexture: 0,
 };
 

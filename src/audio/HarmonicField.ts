@@ -7,7 +7,14 @@ import {
   pickNextChord,
   pickPhraseType,
 } from './MusicTheory';
-import { Movement, pickMovementVariant } from './Movement';
+import {
+  Movement,
+  pickMovementScale,
+  pickMovementVariant,
+  pickPulseProfile,
+  readScaleOverride,
+} from './Movement';
+import { EPIC_SPACING } from './Movement';
 import type {
   ChordFunction,
   HarmonicContext,
@@ -16,6 +23,8 @@ import type {
   SoundKnobs,
 } from './types';
 import {
+  DEFAULT_KNOBS,
+  EMPTY_GROUP_ACTIVITY,
   MODE_NEIGHBORS,
   MODE_SCALES,
   MODE_WEIGHTS,
@@ -40,6 +49,16 @@ const ROOT_WEIGHTS: Record<(typeof ROOTS)[number], number> = {
   A: 1.15,
   Bb: 0.85,
 };
+
+/** A key to arrive in — used to seed a movement from the neighbouring room. */
+export interface HarmonicSeed {
+  root: string;
+  mode: string;
+}
+
+function isRoot(value: string): value is (typeof ROOTS)[number] {
+  return (ROOTS as readonly string[]).includes(value);
+}
 
 function weightedPick<T>(items: T[], weights: number[]): T {
   const total = weights.reduce((a, b) => a + b, 0);
@@ -68,8 +87,10 @@ export class HarmonicField {
   evolutionPhase = 0;
 
   private movement = new Movement(0);
+  private movementsSinceEpic = EPIC_SPACING;
   private transitioning = false;
   private transitionT = 0;
+  private transitionSec = 25;
   private pendingRoot: (typeof ROOTS)[number] | null = null;
   private pendingMode: string | null = null;
   private pendingChord: number[] | null = null;
@@ -81,6 +102,19 @@ export class HarmonicField {
   private pendingPhraseCadence: MelodyPhraseType | null = null;
 
   constructor() {
+    // The dev override has to reach the first movement too, or verifying a
+    // fragment or an epic means waiting out a full-length one first.
+    const forced = readScaleOverride();
+    if (forced) {
+      this.movement = new Movement(
+        0,
+        pickMovementVariant('classic', forced),
+        forced,
+        pickPulseProfile(forced, DEFAULT_KNOBS.sound.pulse, DEFAULT_KNOBS.sound.activity),
+      );
+      this.transitionSec = this.movement.transitionSec();
+    }
+
     const scaleLen = MODE_SCALES[this.mode]!.length;
     this.melodyPhraseType = pickPhraseType('drift');
     this.melodyDegrees = generatePhrase(scaleLen, this.melodyPhraseType, null);
@@ -114,7 +148,7 @@ export class HarmonicField {
 
     if (this.transitioning) {
       this.transitionT += dt;
-      if (this.transitionT >= 25) {
+      if (this.transitionT >= this.transitionSec) {
         this.applyPending();
         this.transitioning = false;
         this.pendingTransitionBloom = true;
@@ -146,7 +180,17 @@ export class HarmonicField {
   }
 
   getHarmonicTransitionProgress(): number {
-    return this.transitioning ? Math.min(1, this.transitionT / 25) : 0;
+    return this.transitioning ? Math.min(1, this.transitionT / this.transitionSec) : 0;
+  }
+
+  /** Read-only view of the running movement — durations, scale, pulse profile. */
+  getMovement(): Movement {
+    return this.movement;
+  }
+
+  /** The key this field is currently in, for seeding another field from it. */
+  currentSeed(): HarmonicSeed {
+    return { root: this.root, mode: this.mode };
   }
 
   consumeTransitionBloom(): boolean {
@@ -172,18 +216,39 @@ export class HarmonicField {
   }
 
   /** Start a new movement with harmonic crossfade */
-  skipToNextMovement(knobs: SoundKnobs): void {
-    this.beginMovement(this.movement.index + 1, knobs);
+  skipToNextMovement(knobs: SoundKnobs, seed?: HarmonicSeed): void {
+    this.beginMovement(this.movement.index + 1, knobs, seed);
   }
 
-  private beginMovement(index: number, knobs: SoundKnobs): void {
+  /**
+   * Start a new movement.
+   *
+   * `seed` is how a doorway crossing works: the next movement arrives in the
+   * key you had been hearing through the wall, rather than a fresh unrelated
+   * one, so walking into the neighbouring room lands you in its atmosphere.
+   */
+  private beginMovement(index: number, knobs: SoundKnobs, seed?: HarmonicSeed): void {
     if (this.melodyPhraseType === 'hook' || this.melodyPhraseType === 'answer') {
       this.storedHook = [...this.melodyDegrees.slice(0, 4)];
     }
 
-    this.movement = new Movement(index, pickMovementVariant(this.movement.variant));
-    this.pendingRoot = this.pickNewRoot();
-    this.pendingMode = this.pickNewMode();
+    const scale =
+      readScaleOverride() ??
+      pickMovementScale(this.movement.scale, this.movementsSinceEpic);
+    this.movementsSinceEpic = scale === 'epic' ? 0 : this.movementsSinceEpic + 1;
+
+    this.movement = new Movement(
+      index,
+      pickMovementVariant(this.movement.variant, scale),
+      scale,
+      pickPulseProfile(scale, knobs.pulse, knobs.activity),
+    );
+    this.transitionSec = this.movement.transitionSec();
+
+    const seedRoot = seed && isRoot(seed.root) ? seed.root : null;
+    this.pendingRoot = seedRoot ?? this.pickNewRoot();
+    this.pendingMode =
+      seed && MODE_SCALES[seed.mode] ? seed.mode : this.pickNewMode();
     const initial = pickInitialChord(this.movement.phase);
     this.pendingChord = initial.degrees;
     this.pendingChordFn = initial.fn;
@@ -306,13 +371,20 @@ export class HarmonicField {
       movementPhase: phase,
       movementProgress: progress,
       movementIndex: this.movement.index,
+      movementScale: this.movement.scale,
+      movementDurationSec: this.movement.durationSec,
+      movementElapsedSec: this.movement.elapsed,
+      pulseProfile: this.movement.pulseProfile,
       ensemblePulse: 0,
       gestureId: 0,
       surpriseFlash: 0,
       inhaleGesture: 0,
       spaceThrowGesture: 0,
       cadenceRipple: 0,
-      groupActivity: { bed: 0, melody: 0, shimmer: 0, air: 0, foundation: 0, flurry: 0, clips: 0 },
+      roomPosition: 0,
+      roomCorridor: 0,
+      doorwayPulse: 0,
+      groupActivity: { ...EMPTY_GROUP_ACTIVITY },
       beatPulse: clock?.beatPulse ?? 0,
       currentBar: clock?.currentBar ?? 0,
       beatInBar: clock?.beatInBar ?? 0,

@@ -9,8 +9,8 @@ import type {
   SoundKnobs,
   VoiceGroup,
 } from './types';
-import { VOICE_GROUPS } from './types';
-import { HarmonicField } from './HarmonicField';
+import { EMPTY_GROUP_ACTIVITY, VOICE_GROUPS } from './types';
+import { HarmonicField, type HarmonicSeed } from './HarmonicField';
 
 const ENSEMBLE_VOICES = [
   'orchestraWhole',
@@ -79,7 +79,6 @@ export class Conductor {
   inhaleGesture = 0;
   spaceThrowGesture = 0;
   cadenceRipple = 0;
-  private static readonly DISSOLVE_BRIDGE_SEC = 10;
   private static readonly PRE_ENSEMBLE_INHALE_SEC = 0.85;
   ensemblePulse = 0;
   gestureId = 0;
@@ -126,7 +125,7 @@ export class Conductor {
 
     if (this.pendingMovementSkip) {
       this.dissolveBridgeT += dt;
-      if (this.dissolveBridgeT >= Conductor.DISSOLVE_BRIDGE_SEC) {
+      if (this.dissolveBridgeT >= this.harmonicField.getMovement().dissolveBridgeSec()) {
         this.executeMovementSkip();
       }
     }
@@ -448,15 +447,18 @@ export class Conductor {
         this.activateGroup('bed', ctx);
         this.triggerEnsemble(ctx, 0.55);
         // Reset the cycle's special textures.
-        this.voices.find((v) => v.id === 'rhythmicPulse')?.exit();
+        this.fadeGroup('pulse');
         this.voices.find((v) => v.id === 'granularTexture')?.exit();
+        // A kit movement starts its beat here, under the gather, so it has
+        // arrived by the time the bloom lands rather than dropping in on it.
+        if (ctx.pulseProfile === 'kit') this.activateVoice('pulseKit', ctx);
         break;
       case 'bloom':
         this.activateGroup('bed', ctx);
         this.activateGroup('melody', ctx);
         this.activateGroup('shimmer', ctx);
         this.triggerEnsemble(ctx, 0.85);
-        this.activateVoice('rhythmicPulse', ctx);
+        this.activatePulse(ctx);
         // Underwater pressure under the crest — warmth-tied so the
         // Brightness lever also decides how often blooms carry weight.
         if (Math.random() < 0.5 + this.knobs.warmth * 0.35) {
@@ -474,7 +476,7 @@ export class Conductor {
         this.fadeGroup('shimmer');
         this.fadeGroup('air');
         this.fadeGroup('flurry');
-        this.voices.find((v) => v.id === 'rhythmicPulse')?.exit();
+        this.fadeGroup('pulse');
         this.voices.find((v) => v.id === 'deepPressure')?.exit();
         this.activateVoice('granularTexture', ctx);
         if (Math.random() < 0.4 + this.knobs.entropy * 0.3) {
@@ -490,6 +492,7 @@ export class Conductor {
         this.fadeGroup('shimmer');
         this.fadeGroup('flurry');
         this.fadeGroup('clips');
+        this.fadeGroup('pulse');
         // Safety net when dissolve was skipped over; exit is idempotent.
         this.voices.find((v) => v.id === 'deepPressure')?.exit();
         this.fx.triggerExhaleVacuum();
@@ -591,6 +594,21 @@ export class Conductor {
     this.recordActivation(pick.id);
   }
 
+  /**
+   * The beat, when there is one. Roughly half of movements draw a 'silent'
+   * profile and never reach here — the ones that do get either the
+   * felt-not-heard sub heartbeat or a kit that can hold the front.
+   */
+  private activatePulse(ctx: HarmonicContext): void {
+    if (ctx.pulseProfile === 'kit') {
+      this.activateVoice('pulseKit', ctx);
+      // The sub heartbeat under a full kit is just mud in the same octave.
+      this.voices.find((v) => v.id === 'rhythmicPulse')?.exit();
+    } else if (ctx.pulseProfile === 'felt') {
+      this.activateVoice('rhythmicPulse', ctx);
+    }
+  }
+
   private activateVoice(id: string, ctx: HarmonicContext): void {
     const voice = this.voices.find((v) => v.id === id);
     if (voice && !voice.isActive()) {
@@ -629,15 +647,7 @@ export class Conductor {
   }
 
   getGroupActivity(): GroupActivity {
-    const activity: GroupActivity = {
-      bed: 0,
-      melody: 0,
-      shimmer: 0,
-      air: 0,
-      foundation: 0,
-      flurry: 0,
-      clips: 0,
-    };
+    const activity: GroupActivity = { ...EMPTY_GROUP_ACTIVITY };
 
     for (const group of Object.keys(VOICE_GROUPS) as VoiceGroup[]) {
       const ids = VOICE_GROUPS[group];
@@ -713,13 +723,37 @@ export class Conductor {
     this.executeMovementSkip();
   }
 
+  /**
+   * Walk through the doorway: begin the next movement in the key of the
+   * room next door, so you arrive in the atmosphere you had been hearing
+   * through the wall rather than in an unrelated one.
+   */
+  crossIntoRoom(seed: HarmonicSeed): void {
+    if (!this.started) return;
+    this.beginNextMovement(seed);
+  }
+
   private executeMovementSkip(): void {
+    this.beginNextMovement();
+  }
+
+  /**
+   * Clear the outgoing movement's layers and start the next one. `seed`
+   * carries the neighbouring room's key on a doorway crossing.
+   *
+   * The pulse fades here and not only on the next phase change: the
+   * incoming movement draws its own pulse profile, and a kit left running
+   * would play over the opening of a piece that is meant to have no beat
+   * at all.
+   */
+  private beginNextMovement(seed?: HarmonicSeed): void {
     this.cancelClipTimeout();
     this.fadeGroup('shimmer');
     this.fadeGroup('air');
     this.fadeGroup('flurry');
     this.fadeGroup('clips');
-    this.harmonicField.skipToNextMovement(this.knobs);
+    this.fadeGroup('pulse');
+    this.harmonicField.skipToNextMovement(this.knobs, seed);
     this.lastPhase = 'drift';
     this.pendingMovementSkip = false;
     this.dissolveBridgeT = 0;

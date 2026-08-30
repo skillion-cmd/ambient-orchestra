@@ -13,6 +13,16 @@ export type MovementPhase =
   | 'dissolve'
   | 'exhale';
 
+/**
+ * How long a movement runs. Ambient records don't hold one length — a
+ * twenty-five minute piece next to a one-minute fragment is what makes a
+ * sequence read as composed rather than generated.
+ */
+export type MovementScale = 'fragment' | 'short' | 'standard' | 'long' | 'epic';
+
+/** Whether a movement carries a beat, and how much of one. */
+export type PulseProfile = 'silent' | 'felt' | 'kit';
+
 export type ChordFunction = 'tonic' | 'subdominant' | 'dominant' | 'color';
 
 export type MelodyPhraseType = 'hook' | 'answer' | 'ladder' | 'drift' | 'recall';
@@ -24,6 +34,7 @@ export type VoiceGroup =
   | 'air'
   | 'foundation'
   | 'flurry'
+  | 'pulse'
   | 'clips';
 
 export const VOICE_GROUPS: Record<VoiceGroup, readonly string[]> = {
@@ -33,6 +44,7 @@ export const VOICE_GROUPS: Record<VoiceGroup, readonly string[]> = {
   air: ['airTexture', 'roomTone', 'fieldRecording'],
   foundation: ['subDrone', 'deepPressure'],
   flurry: ['melodicFlurry', 'sparkRun'],
+  pulse: ['rhythmicPulse', 'pulseKit'],
   clips: ['hymnClip', 'arpClip', 'phraseClip', 'textureClip', 'washClip'],
 };
 
@@ -45,6 +57,7 @@ export const EMPTY_GROUP_ACTIVITY: GroupActivity = {
   air: 0,
   foundation: 0,
   flurry: 0,
+  pulse: 0,
   clips: 0,
 };
 
@@ -80,6 +93,18 @@ export interface HarmonicContext {
   movementProgress: number;
   /** Movement number (always increasing, never loops) */
   movementIndex: number;
+  /** Duration class of the current movement — a fragment or a 25-minute epic */
+  movementScale: MovementScale;
+  movementDurationSec: number;
+  movementElapsedSec: number;
+  /** Whether this movement carries a beat, and how much of one */
+  pulseProfile: PulseProfile;
+  /** Listener position between the two rooms: 0 = here, 1 = next door */
+  roomPosition: number;
+  /** Threshold presence — peaks at 0.5, where both rooms bleed together */
+  roomCorridor: number;
+  /** Fires when the walk settles in the other room (0–1, decaying) */
+  doorwayPulse: number;
   /** Decaying pulse when the ensemble plays together (0–1) */
   ensemblePulse: number;
   /** Increments on each ensemble gesture — sync cue for voices/visuals */
