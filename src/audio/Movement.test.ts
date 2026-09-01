@@ -199,15 +199,17 @@ describe('pickPulseProfile', () => {
     }
   });
 
-  it('leaves roughly half of movements with no beat at all', () => {
-    let silent = 0;
-    const runs = 4000;
-    for (let i = 0; i < runs; i++) {
-      if (pickPulseProfile('standard', 0.5, 0.35) === 'silent') silent++;
-    }
-    const share = silent / runs;
-    expect(share).toBeGreaterThan(0.4);
-    expect(share).toBeLessThan(0.7);
+  it('makes a beat common without making it the default', () => {
+    const runs = 6000;
+    const counts = { silent: 0, felt: 0, kit: 0 };
+    for (let i = 0; i < runs; i++) counts[pickPulseProfile('standard', 0.5, 0.35)]++;
+
+    // At rest a kit leads, but silence is close behind and a third of
+    // movements still carry nothing at all.
+    expect(counts.kit / runs).toBeGreaterThan(0.3);
+    expect(counts.kit / runs).toBeLessThan(0.48);
+    expect(counts.silent / runs).toBeGreaterThan(0.28);
+    expect(counts.silent / runs).toBeLessThan(0.46);
   });
 
   it('the Tempo knob pushes movements toward a kit', () => {

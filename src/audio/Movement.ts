@@ -212,9 +212,12 @@ export function pickMovementScale(
 }
 
 /**
- * Roughly half of movements carry no beat at all. The Tempo and Density
- * knobs bias the rest toward a real kit; a fragment never gets one — there
- * isn't room to establish a pattern and leave again.
+ * A beat is common but never the default: at rest about a third of
+ * movements carry none, a quarter take the felt-not-heard heartbeat, and
+ * the rest get a full kit. Tempo steers it hard — from a kit on a fifth of
+ * movements at the bottom of the knob to half of them at the top — with
+ * Density nudging alongside. A fragment never gets a kit: there isn't room
+ * to establish a pattern and leave again.
  */
 export function pickPulseProfile(
   scale: MovementScale,
@@ -223,9 +226,9 @@ export function pickPulseProfile(
 ): PulseProfile {
   const kitAllowed = scale !== 'fragment';
   const weights: Record<PulseProfile, number> = {
-    silent: 0.5,
-    felt: 0.28 * (0.7 + pulseKnob * 0.6),
-    kit: kitAllowed ? 0.22 * (0.45 + pulseKnob * 1.2 + activityKnob * 0.6) : 0,
+    silent: 0.4,
+    felt: 0.26 * (0.7 + pulseKnob * 0.6),
+    kit: kitAllowed ? 0.34 * (0.25 + pulseKnob * 1.5 + activityKnob * 0.6) : 0,
   };
   const pool = (Object.keys(weights) as PulseProfile[]).filter((p) => weights[p] > 0);
   return weightedDraw(pool, (p) => weights[p]);

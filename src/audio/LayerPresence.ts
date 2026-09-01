@@ -15,22 +15,34 @@ export type PresenceLayer = (typeof PRESENCE_LAYERS)[number];
 
 export type LayerPresence = Record<PresenceLayer, number>;
 
-/** Barely audible, but never gone — a layer recedes rather than drops out. */
-export const PRESENCE_MIN = 0.18;
+/**
+ * Almost gone, but never gone — a layer recedes rather than drops out.
+ * Deep enough (about -22dB) that a receded layer reads as absent rather
+ * than as quiet: in Parallel 1 the ambient curves vanish under the other
+ * elements, they don't just duck.
+ */
+export const PRESENCE_MIN = 0.08;
 /** The front of the mix. Some layer is always here. */
 export const PRESENCE_MAX = 1.15;
 
 /**
- * Where each layer sits in focus space, spread around the origin so the
- * wandering point can visit each in turn. Pad sits nearest the centre: it
- * is the bed the others are heard against, so it is rarely fully absent.
+ * Where each layer sits in focus space: evenly around a ring the wandering
+ * point can reach the edge of, so every layer both takes the front and
+ * falls all the way back. Nothing sits at the centre — a layer parked near
+ * the middle of the walk can never get far from the focus point, and the
+ * pads were exactly that layer, which left the bed unable to recede when
+ * receding is the whole effect.
+ *
+ * The ring order (pad, melody, air, pulse, sub) decides which layers share
+ * the front, since neighbours rise together: pad under melody, pulse with
+ * sub, sub under pad.
  */
 const LAYER_POSITIONS: Record<PresenceLayer, readonly [number, number]> = {
-  pad: [0.0, 0.1],
-  melody: [1.0, 0.15],
-  air: [0.35, 1.0],
-  sub: [-0.85, 0.55],
-  pulse: [0.55, -0.9],
+  pad: [0.0, 1.0],
+  melody: [0.95, 0.31],
+  air: [0.59, -0.81],
+  pulse: [-0.59, -0.81],
+  sub: [-0.95, 0.31],
 };
 
 export const NEUTRAL_PRESENCE: LayerPresence = {
