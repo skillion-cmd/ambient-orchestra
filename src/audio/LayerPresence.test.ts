@@ -40,8 +40,9 @@ describe('presenceAt', () => {
       const values = frames.map((f) => f[layer]);
       // leads: reaches the front at some point in the rotation
       expect(Math.max(...values)).toBeCloseTo(PRESENCE_MAX, 4);
-      // recedes: drops to barely audible at some other point
-      expect(Math.min(...values)).toBeLessThan(0.4);
+      // recedes: falls away to near-absent at some other point, not
+      // merely quiet — that depth is the whole point of the rotation
+      expect(Math.min(...values)).toBeLessThan(0.2);
     }
   });
 

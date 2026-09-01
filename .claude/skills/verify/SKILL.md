@@ -45,7 +45,9 @@ Flows that matter:
   paths (`ao-knobs`, `ao-mode`, `ao-theme`, `ao-visual-mode`).
 - Movements draw a random length and pulse profile, so most paths are
   unreachable by waiting. Force them: `?scale=fragment|short|standard|long|epic`
-  and `?pulse=silent|felt|kit` (they compose). `?scale=fragment` also gets you
+  `?pulse=silent|felt|kit` and `?character=open|night` (they compose).
+  `?character=night` is the only practical way to hear the 2-step: it forces
+  garage tempo, the minor mode pool, and the vinyl crackle bed. `?scale=fragment` also gets you
   a doorway crossing every ~80s — the walk into the neighbouring room is
   forced as each movement runs out, and shows up as `between rooms` in the
   left-rail sub-line, followed by a new movement index.

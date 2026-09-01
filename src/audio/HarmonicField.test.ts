@@ -12,6 +12,7 @@ function mockClock(): MusicalClock {
     isNewBar: () => false,
     isDownbeat: () => false,
     beatDurationSec: () => 1.03,
+    harmonicBeatScale: () => 1,
     beatPulse: 0,
     currentBar: 0,
     beatInBar: 0,

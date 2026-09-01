@@ -4,6 +4,7 @@ import type { ConductorFx } from './ConductorFx';
 import { noopConductorFx } from './ConductorFx';
 import type {
   GroupActivity,
+  MovementCharacter,
   HarmonicContext,
   MelodyPhraseType,
   SoundKnobs,
@@ -33,6 +34,15 @@ const CORE_IDS = new Set([
   'dreamMelody',
   'deepPressure',
 ]);
+
+/**
+ * On a night piece the 2-step and the surface noise are the piece, not
+ * texture on top of it. Both are activated once and then left alone, so if
+ * the voice trimmer culled either one it would be gone for the rest of the
+ * movement — a groove that evaporates halfway through, or crackle that
+ * stops and never returns.
+ */
+const NIGHT_CORE_IDS = new Set(['pulseKit', 'vinylCrackle']);
 
 function gaussianRandom(): number {
   let u = 0;
@@ -68,6 +78,7 @@ export class Conductor {
   private readonly historySize = 10;
   private started = false;
   private lastPhase = 'drift';
+  private lastCharacter: MovementCharacter | null = null;
   private lastMelodyIndex = 0;
   private pendingClipTimeout: ReturnType<typeof setTimeout> | null = null;
   private pendingGesture = false;
@@ -175,6 +186,15 @@ export class Conductor {
       (this.targetInterest - this.interest) * (0.018 + activity * 0.012) +
       gaussianRandom() * 0.003;
     this.interest = Math.max(0.2, Math.min(0.9, this.interest));
+
+    // Surface noise runs for the whole of a night piece rather than being
+    // scheduled like the other textures — crackle that came and went would
+    // read as a synth part instead of as the medium.
+    if (ctx.character !== this.lastCharacter) {
+      this.lastCharacter = ctx.character;
+      if (ctx.character === 'night') this.activateVoice('vinylCrackle', ctx);
+      else this.voices.find((v) => v.id === 'vinylCrackle')?.exit();
+    }
 
     if (ctx.movementPhase !== this.lastPhase) {
       this.cancelClipTimeout();
@@ -633,7 +653,10 @@ export class Conductor {
     if (active.length <= 4) return;
     if (active.length <= maxVoices && !force) return;
 
-    const removable = active.filter((v) => !CORE_IDS.has(v.id));
+    const night = this.harmonicField.getMovement().character === 'night';
+    const removable = active.filter(
+      (v) => !CORE_IDS.has(v.id) && !(night && NIGHT_CORE_IDS.has(v.id)),
+    );
     if (removable.length === 0) return;
 
     removable[Math.floor(Math.random() * removable.length)]?.exit();

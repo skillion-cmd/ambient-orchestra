@@ -72,6 +72,8 @@ export class SessionReadout {
       this.subEl.textContent = `crossfade ${Math.round(harmonicTransitionProgress * 100)}%`;
     } else if (harmonic.roomCorridor > 0.3) {
       this.subEl.textContent = 'between rooms';
+    } else if (harmonic.character === 'night') {
+      this.subEl.textContent = `${harmonic.movementScale} · night`;
     } else {
       this.subEl.textContent = harmonic.movementScale;
     }
