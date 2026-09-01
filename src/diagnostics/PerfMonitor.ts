@@ -9,6 +9,9 @@ export interface FrameInfo {
   /** Overall output level (0–1); sustained ~1 indicates limiter pinning. */
   level: number;
   phase: string;
+  /** Transport tempo, and the half-time divisor the melodic side is using. */
+  bpm: number;
+  beatScale: number;
 }
 
 interface MemorySample {
@@ -121,7 +124,8 @@ export class PerfMonitor {
       const fps = this.medianFps();
       this.readout.textContent =
         `FPS ${fps.toFixed(0)} · drop ${this.droppedFrames} · ` +
-        `worst ${this.worstFrameMs.toFixed(0)}ms · ${info.phase}`;
+        `worst ${this.worstFrameMs.toFixed(0)}ms · ${info.phase} · ` +
+        `${info.bpm.toFixed(0)}bpm ÷${info.beatScale}`;
     }
   }
 

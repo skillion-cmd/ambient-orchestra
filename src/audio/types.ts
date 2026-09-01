@@ -23,6 +23,14 @@ export type MovementScale = 'fragment' | 'short' | 'standard' | 'long' | 'epic';
 /** Whether a movement carries a beat, and how much of one. */
 export type PulseProfile = 'silent' | 'felt' | 'kit';
 
+/**
+ * The world a movement lives in. `open` is the daylit default this engine
+ * started as. `night` is the Burial reading: a 2-step shuffle at garage
+ * tempo, minor harmony, vinyl surface noise, drums close and dry while
+ * everything melodic hangs back at half time.
+ */
+export type MovementCharacter = 'open' | 'night';
+
 export type ChordFunction = 'tonic' | 'subdominant' | 'dominant' | 'color';
 
 export type MelodyPhraseType = 'hook' | 'answer' | 'ladder' | 'drift' | 'recall';
@@ -99,6 +107,14 @@ export interface HarmonicContext {
   movementElapsedSec: number;
   /** Whether this movement carries a beat, and how much of one */
   pulseProfile: PulseProfile;
+  /** The world this movement lives in — daylit, or a 2-step night piece */
+  character: MovementCharacter;
+  /**
+   * Multiplier on beat-relative durations for everything melodic. At garage
+   * tempo the transport runs 2.4x faster than this engine's resting pulse;
+   * without this the pads and melodies would run 2.4x faster with it.
+   */
+  harmonicBeatScale: number;
   /** Listener position between the two rooms: 0 = here, 1 = next door */
   roomPosition: number;
   /** Threshold presence — peaks at 0.5, where both rooms bleed together */
@@ -210,6 +226,22 @@ export const MODE_WEIGHTS: Record<string, number> = {
   tropicalBright: 1.35,
   dreamMinor: 0.35,
   minorAdd9: 0.25,
+};
+
+/**
+ * Night flips the weighting minor. The engine's daylit default all but
+ * refuses dreamMinor and minorAdd9 (0.35 and 0.25 against lydian's 1.4);
+ * a night piece wants exactly those, with the brighter modes present only
+ * as the occasional lift.
+ */
+export const NIGHT_MODE_WEIGHTS: Record<string, number> = {
+  lydian: 0.12,
+  major7: 0.2,
+  pentatonic: 0.5,
+  susWash: 0.9,
+  tropicalBright: 0.08,
+  dreamMinor: 1.5,
+  minorAdd9: 1.4,
 };
 
 /** Adjacent modes for entropy drift */

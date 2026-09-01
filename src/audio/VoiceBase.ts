@@ -28,6 +28,7 @@ const VOICE_PANS: Record<string, number> = {
   fieldRecording: 0.65,
   rhythmicPulse: 0,
   pulseKit: 0,
+  vinylCrackle: 0,
   granularTexture: 0,
 };
 

@@ -1020,6 +1020,28 @@ export class GranularTexture extends VoiceBase {
   }
 }
 
+/** Turn explicit step indices into a 16-step boolean grid. */
+function stepsToPattern(steps: number[], length = 16): boolean[] {
+  const out = new Array(length).fill(false);
+  for (const st of steps) out[((st % length) + length) % length] = true;
+  return out;
+}
+
+/**
+ * A fixed timing offset per step, drawn once per pattern and then kept.
+ *
+ * Burial sequences by eye rather than to a grid, so his hits aren't
+ * randomly jittered — they are consistently, reproducibly in the wrong
+ * place, and the same wrong place every bar. That is what makes the groove
+ * feel handmade instead of merely loose: random jitter per hit just sounds
+ * sloppy, whereas a stable offset becomes part of the pattern.
+ */
+function fixedNudges(length = 16): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < length; i++) out.push((Math.random() - 0.45) * 0.03);
+  return out;
+}
+
 /**
  * A soft kit that can actually carry a section — filtered kick, shaker and
  * a woody click on rotating euclidean patterns, swung and humanised so it
@@ -1032,6 +1054,9 @@ export class PulseKit extends VoiceBase {
   private shakerFilter: Tone.Filter | null = null;
   private click: Tone.MembraneSynth | null = null;
   private clickFilter: Tone.Filter | null = null;
+  /** Night's backbeat: a short noise burst, where open uses a woody click. */
+  private snare: Tone.NoiseSynth | null = null;
+  private snareFilter: Tone.Filter | null = null;
   private loop: Tone.Loop | null = null;
 
   private kickPattern: boolean[] = [];
@@ -1040,6 +1065,8 @@ export class PulseKit extends VoiceBase {
   private step = 0;
   private bars = 0;
   private swing = 0.4;
+  /** Fixed per-step offsets on a night pattern; null means grid + jitter. */
+  private nudges: number[] | null = null;
 
   constructor(dest: Bus) {
     super('pulseKit', dest, 0.5);
@@ -1068,6 +1095,12 @@ export class PulseKit extends VoiceBase {
       envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.03 },
     }).connect(this.clickFilter);
 
+    this.snareFilter = new Tone.Filter(1800, 'bandpass', -12).connect(this.output);
+    this.snare = new Tone.NoiseSynth({
+      noise: { type: 'white' },
+      envelope: { attack: 0.001, decay: 0.13, sustain: 0 },
+    }).connect(this.snareFilter);
+
     this.step = 0;
     this.bars = 0;
     this.rollPatterns();
@@ -1076,6 +1109,10 @@ export class PulseKit extends VoiceBase {
 
   /** Fresh euclidean spreads, re-rolled every eight bars so it evolves. */
   private rollPatterns(): void {
+    if (this.harmonicContext?.character === 'night') {
+      this.rollTwoStep();
+      return;
+    }
     const kickPulses = 3 + Math.floor(Math.random() * 3); // 3–5
     const shakerPulses = 7 + Math.floor(Math.random() * 5); // 7–11
     const clickPulses = 2 + Math.floor(Math.random() * 2); // 2–3
@@ -1083,6 +1120,41 @@ export class PulseKit extends VoiceBase {
     this.shakerPattern = euclidean(shakerPulses, 16, Math.floor(Math.random() * 16));
     this.clickPattern = euclidean(clickPulses, 16, 3 + Math.floor(Math.random() * 10));
     this.swing = 0.25 + Math.random() * 0.4;
+    this.nudges = null;
+  }
+
+  /**
+   * 2-step. The genre's defining move is what the kick *doesn't* do: it
+   * lands on the one and then skips the third beat entirely, dropping
+   * somewhere in its second half instead, so the bar lurches rather than
+   * marches. The snare holds the backbeat flat against that on 2 and 4,
+   * and the hats fill the gaps unevenly.
+   */
+  private rollTwoStep(): void {
+    const KICKS = [
+      [0, 6, 10],
+      [0, 7],
+      [0, 6, 11],
+      [0, 10],
+      [0, 3, 10],
+    ];
+    const HATS = [
+      [2, 3, 6, 7, 10, 11, 14],
+      [2, 6, 7, 10, 14, 15],
+      [1, 2, 6, 9, 10, 14],
+      [2, 3, 7, 10, 11, 13, 14],
+    ];
+    const GHOSTS = [[7, 15], [11], [3, 13], [7]];
+
+    this.kickPattern = stepsToPattern(KICKS[Math.floor(Math.random() * KICKS.length)]!);
+    this.shakerPattern = stepsToPattern(HATS[Math.floor(Math.random() * HATS.length)]!);
+    this.clickPattern = stepsToPattern([
+      4,
+      12,
+      ...GHOSTS[Math.floor(Math.random() * GHOSTS.length)]!,
+    ]);
+    this.swing = 0.55 + Math.random() * 0.3;
+    this.nudges = fixedNudges();
   }
 
   private tick(time: number): void {
@@ -1093,28 +1165,46 @@ export class PulseKit extends VoiceBase {
     }
     this.step++;
 
-    // Swing the offbeat sixteenths, then humanise everything a little, so
-    // no two hits land on exactly the same part of the grid.
+    // Swing the offbeat sixteenths. A night pattern then takes its fixed
+    // per-step offsets — the same hits land in the same wrong places every
+    // bar, which is handmade rather than sloppy. Everything else gets a
+    // little random jitter so no two hits sit exactly on the grid.
     const sixteenth = Tone.Time('16n').toSeconds();
     const swung = step % 2 === 1 ? this.swing * 0.3 * sixteenth : 0;
-    const at = time + swung + (Math.random() - 0.5) * 0.016;
+    const drift = this.nudges ? this.nudges[step]! : (Math.random() - 0.5) * 0.016;
+    const at = time + swung + drift;
 
     const rootMidi = this.harmonicContext?.rootMidi ?? 45;
+    const night = this.harmonicContext?.character === 'night';
 
-    if (euclideanHit(this.kickPattern, step, 0.94)) {
+    if (euclideanHit(this.kickPattern, step, night ? 0.99 : 0.94)) {
       const pitch = Tone.Frequency(rootMidi - 24, 'midi').toFrequency();
-      this.kick?.triggerAttackRelease(pitch, '16n', at, 0.72 + Math.random() * 0.16);
+      // A 2-step kick is a thud placed just so, not a punch: softer and
+      // more even than the open kit's, because the pattern carries it.
+      const vel = night ? 0.6 + Math.random() * 0.08 : 0.72 + Math.random() * 0.16;
+      this.kick?.triggerAttackRelease(pitch, '16n', at, vel);
     }
 
-    if (euclideanHit(this.shakerPattern, step, 0.8)) {
+    if (euclideanHit(this.shakerPattern, step, night ? 0.92 : 0.8)) {
       // Accent the downbeat-adjacent steps; the rest stay ghosted.
       const accent = step % 4 === 0 ? 0.28 : 0.1 + Math.random() * 0.12;
       this.shaker?.triggerAttackRelease('64n', at, accent);
     }
 
-    if (euclideanHit(this.clickPattern, step, 0.6)) {
-      const pitch = Tone.Frequency(rootMidi + 12, 'midi').toFrequency();
-      this.click?.triggerAttackRelease(pitch, '32n', at + 0.004, 0.18 + Math.random() * 0.1);
+    if (euclideanHit(this.clickPattern, step, night ? 0.97 : 0.6)) {
+      if (night) {
+        // Backbeat on 2 and 4 holds flat against the lurching kick; the
+        // off-grid extras are ghosts.
+        const backbeat = step === 4 || step === 12;
+        this.snare?.triggerAttackRelease(
+          backbeat ? '16n' : '32n',
+          at,
+          backbeat ? 0.3 + Math.random() * 0.06 : 0.09 + Math.random() * 0.06,
+        );
+      } else {
+        const pitch = Tone.Frequency(rootMidi + 12, 'midi').toFrequency();
+        this.click?.triggerAttackRelease(pitch, '32n', at + 0.004, 0.18 + Math.random() * 0.1);
+      }
     }
   }
 
@@ -1124,12 +1214,99 @@ export class PulseKit extends VoiceBase {
     this.loop?.stop().dispose();
     this.loop = null;
     this.scheduleDispose(
-      [this.kick, this.shaker, this.shakerFilter, this.click, this.clickFilter],
+      [
+        this.kick,
+        this.shaker,
+        this.shakerFilter,
+        this.click,
+        this.clickFilter,
+        this.snare,
+        this.snareFilter,
+      ],
       0.5,
     );
     this.kick = null;
     this.shaker = null;
     this.shakerFilter = null;
+    this.click = null;
+    this.clickFilter = null;
+    this.snare = null;
+    this.snareFilter = null;
+  }
+}
+
+/**
+ * Vinyl surface noise: a continuous hiss floor with sparse crackles riding
+ * on top.
+ *
+ * The most recognisable thing about a Burial record after the drums, and
+ * the reason his pads sound like they were found rather than played. It
+ * runs for the whole of a night piece rather than being scheduled like
+ * the other textures — surface noise that came and went would just read as
+ * a synth part.
+ *
+ * The crackles are Poisson-ish rather than metrical: a low per-tick chance
+ * of a click, so they never line up with the bar and never settle into a
+ * rhythm of their own.
+ */
+export class VinylCrackle extends VoiceBase {
+  private hiss: Tone.Noise | null = null;
+  private hissFilter: Tone.Filter | null = null;
+  private hissGain: Tone.Gain | null = null;
+  private click: Tone.NoiseSynth | null = null;
+  private clickFilter: Tone.Filter | null = null;
+  private loop: Tone.Loop | null = null;
+
+  constructor(dest: Bus) {
+    super('vinylCrackle', dest, 0.26);
+    this.fadeSpeed = 0.01;
+  }
+
+  onEnter(): void {
+    this.clearPendingDispose();
+
+    // Bandpassed pink noise: the bed. Rolled off top and bottom so it sits
+    // as room rather than as air.
+    this.hissGain = new Tone.Gain(0.16).connect(this.output);
+    this.hissFilter = new Tone.Filter({ frequency: 2600, type: 'bandpass', Q: 0.4 })
+      .connect(this.hissGain);
+    this.hiss = new Tone.Noise('pink').connect(this.hissFilter);
+    this.hiss.start();
+
+    this.clickFilter = new Tone.Filter(3400, 'highpass', -12).connect(this.output);
+    this.click = new Tone.NoiseSynth({
+      noise: { type: 'white' },
+      envelope: { attack: 0.0005, decay: 0.006, sustain: 0 },
+    }).connect(this.clickFilter);
+
+    this.loop = new Tone.Loop((time) => this.tick(time), '32n').start('+0.05');
+  }
+
+  private tick(time: number): void {
+    // Roughly a click every second or so, clustering naturally because each
+    // tick rolls independently.
+    if (Math.random() > 0.06) return;
+    const soft = Math.random() < 0.7;
+    this.click?.triggerAttackRelease(
+      '128n',
+      time + Math.random() * 0.01,
+      soft ? 0.05 + Math.random() * 0.07 : 0.16 + Math.random() * 0.14,
+    );
+  }
+
+  onUpdate(): void {}
+
+  onExit(): void {
+    this.loop?.stop().dispose();
+    this.loop = null;
+    this.hiss?.stop();
+    this.scheduleDispose(
+      [this.hiss, this.hissFilter, this.hissGain, this.click, this.clickFilter],
+      0.6,
+    );
+    this.hiss = null;
+    this.hissFilter = null;
+    this.hissGain = null;
     this.click = null;
     this.clickFilter = null;
   }
@@ -1180,6 +1357,7 @@ export function createAllVoices(
     new SparkRun(melodyBus),
     new RhythmicPulse(padBus),
     new PulseKit(pulseBus),
+    new VinylCrackle(airBus),
     new GranularTexture(airBus),
     ...createClipVoices(padBus, melodyBus, airBus),
   ];

@@ -18,6 +18,8 @@ Inspired by the idea that good ambient music flows in and out of interest within
 - **Foreground rotation** — a focus point wanders a ring of layers so pad, melody, air, sub and pulse trade the front of the mix continuously; whichever layer is nearest sits at full presence and the rest fall away to near-inaudible, without ever quite dropping out
 - **The room next door** — a second generative engine in its own key, behind a lowpass wall and a distance send. A listener walk drifts toward it and back; crossing the threshold trades the two rooms
 - **Pulse, sometimes** — a soft kit (euclidean kick, shaker and woody click, swung and humanised) on its own dry bus, on the movements that draw one
+- **Night pieces (Burial)** — about a fifth of movements come up as a night piece: a 2-step shuffle at 128–140 where the kick lands on the one and then skips the third beat, a flat backbeat against it, hats filling the gaps unevenly, minor-weighted harmony, and vinyl surface noise running the whole way through. Timing offsets are fixed per pattern rather than jittered per hit — sequenced by eye, so the same hits land in the same wrong places every bar
+- **Half-time decoupling** — the transport reaches 140, but everything melodic is stretched by whichever power of two brings its felt pulse back near the resting tempo, so a night piece's pads hang under its drums instead of sprinting with them
 - **Phrase-aligned automation** — autonomous knob drift locks to 8/16-bar boundaries and moves in coordinated clusters, so the piece reads as sections rather than arrhythmic drift
 - **Flourishes throughout** — sparkle runs and melodic flurries recur on a cadence that ebbs and flows within each movement (denser in bloom/hang, sparser in the troughs)
 - **New textures** — a Bicep/Caribou-style felt sub **pulse** (bloom/hang) and Aphex/Nosaj-style **granular degradation** (dissolve/exhale)
@@ -64,8 +66,8 @@ npm run dev
 
 Open **http://localhost:5173/** and click **Click to begin** to start audio.
 
-Movements draw their length and their pulse profile at random, so waiting for a
-particular one is impractical. Two dev-only query params force the draw:
+Movements draw their length, pulse profile and character at random, so waiting
+for a particular one is impractical. Three dev-only query params force the draw:
 
 - `?scale=fragment` (or `short`, `standard`, `long`, `epic`) — pins every
   movement to that duration class, the only way to hear a 45-second fragment or
@@ -73,8 +75,10 @@ particular one is impractical. Two dev-only query params force the draw:
 - `?pulse=kit` (or `felt`, `silent`) — pins the pulse profile. A third of
   movements carry no beat and a fragment never gets a kit, so this is how you
   reach a particular one on demand.
+- `?character=night` (or `open`) — pins the world. Night pieces are a
+  minority draw, so this is how you hear the 2-step at garage tempo on demand.
 
-They compose: `?scale=long&pulse=kit`.
+They compose: `?scale=long&character=night`.
 
 ## Production build
 
@@ -105,7 +109,7 @@ Unit tests cover music theory helpers and harmonic field transitions.
 | Activity | Still ↔ Drifting | Voice change rate and harmonic event density |
 | Memory | New ↔ Recall | Phrase recall weight in the harmonic field |
 | Entropy | Stable ↔ Morph | Mode drift and timbral instability |
-| Pulse | Calm ↔ Driving | Tempo modulation and delay feel |
+| Pulse | Calm ↔ Driving | Tempo (up to 140 BPM in Calibrate), delay feel, and how often a night piece comes up |
 
 ### Vision knobs
 

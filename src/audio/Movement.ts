@@ -1,4 +1,9 @@
-import type { MovementPhase, MovementScale, PulseProfile } from './types';
+import type {
+  MovementCharacter,
+  MovementPhase,
+  MovementScale,
+  PulseProfile,
+} from './types';
 import {
   generatePhrase,
   melodyDurationBeats,
@@ -30,7 +35,7 @@ export type MovementVariant =
   | 'noBloom'
   | 'tripleWave';
 
-export type { MovementScale, PulseProfile };
+export type { MovementCharacter, MovementScale, PulseProfile };
 
 interface ScaleSpec {
   minSec: number;
@@ -212,6 +217,24 @@ export function pickMovementScale(
 }
 
 /**
+ * How often a piece turns out to be a night piece. Rare enough that
+ * arriving at one is a change of weather rather than the weather — and
+ * never on a fragment, which has no room to establish a groove and leave.
+ */
+const NIGHT_CHANCE = 0.22;
+
+export function pickMovementCharacter(
+  scale: MovementScale,
+  previous: MovementCharacter,
+  pulseKnob: number,
+): MovementCharacter {
+  if (scale === 'fragment') return 'open';
+  // Two night pieces back to back stop being a change of weather.
+  const chance = previous === 'night' ? NIGHT_CHANCE * 0.35 : NIGHT_CHANCE;
+  return Math.random() < chance * (0.5 + pulseKnob) ? 'night' : 'open';
+}
+
+/**
  * A beat is common but never the default: at rest about a third of
  * movements carry none, a quarter take the felt-not-heard heartbeat, and
  * the rest get a full kit. Tempo steers it hard — from a kit on a fifth of
@@ -223,7 +246,10 @@ export function pickPulseProfile(
   scale: MovementScale,
   pulseKnob: number,
   activityKnob: number,
+  character: MovementCharacter = 'open',
 ): PulseProfile {
+  // A night piece is the 2-step. There is no silent version of one.
+  if (character === 'night') return 'kit';
   const kitAllowed = scale !== 'fragment';
   const weights: Record<PulseProfile, number> = {
     silent: 0.4,
@@ -253,7 +279,16 @@ export function readPulseOverride(): PulseProfile | null {
   return readOverride('pulse', PULSE_PROFILES);
 }
 
+/**
+ * Dev-only character override — `?character=night`. Night pieces are a
+ * minority draw by design, so this is how you reach one on purpose.
+ */
+export function readCharacterOverride(): MovementCharacter | null {
+  return readOverride('character', MOVEMENT_CHARACTERS);
+}
+
 const PULSE_PROFILES: PulseProfile[] = ['silent', 'felt', 'kit'];
+export const MOVEMENT_CHARACTERS: MovementCharacter[] = ['open', 'night'];
 
 function readOverride<T extends string>(key: string, allowed: readonly T[]): T | null {
   if (typeof window === 'undefined') return null;
@@ -275,6 +310,7 @@ export class Movement {
     readonly variant: MovementVariant = 'classic',
     readonly scale: MovementScale = 'standard',
     readonly pulseProfile: PulseProfile = 'silent',
+    readonly character: MovementCharacter = 'open',
   ) {
     this.index = index;
     this.timeline = buildTimeline(variant, scale);

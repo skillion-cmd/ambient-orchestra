@@ -520,6 +520,11 @@ export class AudioEngine {
     return features;
   }
 
+  /** Current transport tempo — surfaced for the dev PerfMonitor readout. */
+  getBpm(): number {
+    return Tone.getTransport().bpm.value;
+  }
+
   isRunning(): boolean {
     return this.running;
   }

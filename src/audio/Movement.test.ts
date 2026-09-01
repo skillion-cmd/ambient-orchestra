@@ -4,9 +4,11 @@ import {
   EPIC_SPACING,
   Movement,
   MOVEMENT_SCALES,
+  pickMovementCharacter,
   pickMovementScale,
   pickMovementVariant,
   pickPulseProfile,
+  type MovementCharacter,
   type MovementScale,
   type MovementVariant,
 } from './Movement';
@@ -221,5 +223,47 @@ describe('pickPulseProfile', () => {
       return kits;
     };
     expect(kitsAt(1)).toBeGreaterThan(kitsAt(0));
+  });
+});
+
+describe('pickMovementCharacter', () => {
+  const share = (fn: () => MovementCharacter, runs = 6000): number => {
+    let night = 0;
+    for (let i = 0; i < runs; i++) if (fn() === 'night') night++;
+    return night / runs;
+  };
+
+  it('never makes a fragment a night piece — no room to establish a groove', () => {
+    for (let i = 0; i < 500; i++) {
+      expect(pickMovementCharacter('fragment', 'open', 1)).toBe('open');
+    }
+  });
+
+  it('keeps night a minority draw, so arriving at one is a change of weather', () => {
+    const s = share(() => pickMovementCharacter('standard', 'open', 0.5));
+    expect(s).toBeGreaterThan(0.1);
+    expect(s).toBeLessThan(0.35);
+  });
+
+  it('rarely follows one night piece with another', () => {
+    const after = share(() => pickMovementCharacter('standard', 'night', 0.5));
+    const fresh = share(() => pickMovementCharacter('standard', 'open', 0.5));
+    expect(after).toBeLessThan(fresh * 0.6);
+  });
+
+  it('the Tempo knob makes night pieces more likely', () => {
+    expect(share(() => pickMovementCharacter('standard', 'open', 1))).toBeGreaterThan(
+      share(() => pickMovementCharacter('standard', 'open', 0)),
+    );
+  });
+});
+
+describe('pickPulseProfile under a night character', () => {
+  it('always carries the kit — there is no silent 2-step piece', () => {
+    for (const scale of MOVEMENT_SCALES) {
+      for (let i = 0; i < 200; i++) {
+        expect(pickPulseProfile(scale, 0, 0, 'night')).toBe('kit');
+      }
+    }
   });
 });

@@ -10,9 +10,11 @@ import {
 import {
   EPIC_SPACING,
   Movement,
+  pickMovementCharacter,
   pickMovementScale,
   pickMovementVariant,
   pickPulseProfile,
+  readCharacterOverride,
   readPulseOverride,
   readScaleOverride,
 } from './Movement';
@@ -20,6 +22,7 @@ import type {
   ChordFunction,
   HarmonicContext,
   MelodyPhraseType,
+  MovementCharacter,
   MovementPhase,
   SoundKnobs,
 } from './types';
@@ -29,6 +32,7 @@ import {
   MODE_NEIGHBORS,
   MODE_SCALES,
   MODE_WEIGHTS,
+  NIGHT_MODE_WEIGHTS,
 } from './types';
 import type { MusicalClock } from './MusicalClock';
 
@@ -108,8 +112,10 @@ export class HarmonicField {
     // that happened not to draw one.
     const forcedScale = readScaleOverride();
     const forcedPulse = readPulseOverride();
-    if (forcedScale || forcedPulse) {
+    const forcedCharacter = readCharacterOverride();
+    if (forcedScale || forcedPulse || forcedCharacter) {
       const scale = forcedScale ?? 'standard';
+      const character = forcedCharacter ?? 'open';
       this.movement = new Movement(
         0,
         pickMovementVariant('classic', scale),
@@ -119,9 +125,12 @@ export class HarmonicField {
             scale,
             DEFAULT_KNOBS.sound.pulse,
             DEFAULT_KNOBS.sound.activity,
+            character,
           ),
+        character,
       );
       this.transitionSec = this.movement.transitionSec();
+      if (character === 'night') this.mode = this.pickNewMode('night');
     }
 
     const scaleLen = MODE_SCALES[this.mode]!.length;
@@ -140,7 +149,7 @@ export class HarmonicField {
 
   advance(dt: number, clock: MusicalClock, knobs: SoundKnobs): void {
     this.evolutionPhase += dt * 0.0137;
-    clock.update(dt, this.movement.phase, knobs);
+    clock.update(dt, this.movement.phase, knobs, this.movement.character);
 
     if (
       this.movement.phase === 'dissolve' &&
@@ -168,7 +177,10 @@ export class HarmonicField {
       this.beginMovement(this.movement.index + 1, knobs);
     }
 
-    const beatDur = clock.beatDurationSec();
+    // Stretch the melodic clock as the transport speeds up, so a night
+    // piece's melody hangs at half or quarter time under its 2-step rather
+    // than sprinting alongside it.
+    const beatDur = clock.beatDurationSec() * clock.harmonicBeatScale();
     this.melodyTimer += dt;
     if (this.melodyTimer >= this.melodyNoteDurationBeats * beatDur) {
       this.melodyTimer = 0;
@@ -246,18 +258,24 @@ export class HarmonicField {
       pickMovementScale(this.movement.scale, this.movementsSinceEpic);
     this.movementsSinceEpic = scale === 'epic' ? 0 : this.movementsSinceEpic + 1;
 
+    const character =
+      readCharacterOverride() ??
+      pickMovementCharacter(scale, this.movement.character, knobs.pulse);
+
     this.movement = new Movement(
       index,
       pickMovementVariant(this.movement.variant, scale),
       scale,
-      readPulseOverride() ?? pickPulseProfile(scale, knobs.pulse, knobs.activity),
+      readPulseOverride() ??
+        pickPulseProfile(scale, knobs.pulse, knobs.activity, character),
+      character,
     );
     this.transitionSec = this.movement.transitionSec();
 
     const seedRoot = seed && isRoot(seed.root) ? seed.root : null;
     this.pendingRoot = seedRoot ?? this.pickNewRoot();
     this.pendingMode =
-      seed && MODE_SCALES[seed.mode] ? seed.mode : this.pickNewMode();
+      seed && MODE_SCALES[seed.mode] ? seed.mode : this.pickNewMode(character);
     const initial = pickInitialChord(this.movement.phase);
     this.pendingChord = initial.degrees;
     this.pendingChordFn = initial.fn;
@@ -316,10 +334,11 @@ export class HarmonicField {
     return weightedPick([...ROOTS], weights);
   }
 
-  private pickNewMode(): string {
+  private pickNewMode(character: MovementCharacter = 'open'): string {
+    const table = character === 'night' ? NIGHT_MODE_WEIGHTS : MODE_WEIGHTS;
     const names = Object.keys(MODE_SCALES);
     const weights = names.map((m) => {
-      const base = MODE_WEIGHTS[m] ?? 0.5;
+      const base = table[m] ?? 0.5;
       return m === this.mode ? base * 0.25 : base;
     });
     return weightedPick(names, weights);
@@ -384,6 +403,8 @@ export class HarmonicField {
       movementDurationSec: this.movement.durationSec,
       movementElapsedSec: this.movement.elapsed,
       pulseProfile: this.movement.pulseProfile,
+      character: this.movement.character,
+      harmonicBeatScale: clock?.harmonicBeatScale() ?? 1,
       ensemblePulse: 0,
       gestureId: 0,
       surpriseFlash: 0,

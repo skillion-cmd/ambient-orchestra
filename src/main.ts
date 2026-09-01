@@ -145,6 +145,8 @@ function loop(now: number): void {
       audioRunning: audioEngine.isContextRunning(),
       level: features.overall,
       phase: harmonic.movementPhase,
+      bpm: audioEngine.getBpm(),
+      beatScale: harmonic.harmonicBeatScale,
     });
   }
 }
