@@ -4,16 +4,58 @@ import { DEFAULT_KNOBS } from '../audio/types';
 /**
  * Drift — purely procedural: rails hidden, the engine self-drives everything.
  * Calibrate — direct control: auto-drift off, knob settings stick and persist.
+ * Play — Calibrate plus an instrument: a MIDI or computer keyboard plays a
+ * polyphonic voice at the front of the mix while the orchestra ducks behind it.
  */
-export type AppMode = 'drift' | 'calibrate';
+export type AppMode = 'drift' | 'calibrate' | 'play';
+
+/** Modes where the knobs hold still and a calibration is worth remembering. */
+export function isDirectMode(mode: AppMode): boolean {
+  return mode === 'calibrate' || mode === 'play';
+}
 
 const MODE_KEY = 'ao-mode';
 const KNOBS_KEY = 'ao-knobs';
+const PLAY_KEY = 'ao-play';
+
+/** What the instrument was set to last time — restored on the next session. */
+export interface StoredPlayState {
+  presetId: string;
+  tuning: 'scale' | 'chromatic';
+  octaveShift: number;
+}
+
+export function loadStoredPlayState(): StoredPlayState | null {
+  try {
+    const raw = localStorage.getItem(PLAY_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const value = parsed as Record<string, unknown>;
+    const tuning = value.tuning;
+    const octaveShift = value.octaveShift;
+    if (typeof value.presetId !== 'string') return null;
+    if (tuning !== 'scale' && tuning !== 'chromatic') return null;
+    if (typeof octaveShift !== 'number' || !Number.isInteger(octaveShift)) return null;
+    if (octaveShift < -3 || octaveShift > 3) return null;
+    return { presetId: value.presetId, tuning, octaveShift };
+  } catch {
+    return null;
+  }
+}
+
+export function storePlayState(state: StoredPlayState): void {
+  try {
+    localStorage.setItem(PLAY_KEY, JSON.stringify(state));
+  } catch {
+    /* private browsing */
+  }
+}
 
 export function loadStoredMode(): AppMode {
   try {
     const stored = localStorage.getItem(MODE_KEY);
-    if (stored === 'drift' || stored === 'calibrate') return stored;
+    if (stored === 'drift' || stored === 'calibrate' || stored === 'play') return stored;
   } catch {
     /* private browsing */
   }

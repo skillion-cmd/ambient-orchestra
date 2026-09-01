@@ -135,6 +135,8 @@ export interface HarmonicContext {
   cadenceRipple: number;
   /** Downbeat pulse for visuals (0–1) */
   beatPulse: number;
+  /** Play-mode note attack (0–1, decaying) — a played chord blooms the field */
+  playPulse: number;
   /** Per voice-group activity (0–1), from active voices */
   groupActivity: GroupActivity;
   currentBar: number;

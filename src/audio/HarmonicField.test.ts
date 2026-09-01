@@ -14,6 +14,7 @@ function mockClock(): MusicalClock {
     beatDurationSec: () => 1.03,
     harmonicBeatScale: () => 1,
     beatPulse: 0,
+    playPulse: 0,
     currentBar: 0,
     beatInBar: 0,
     subdivision: 0,

@@ -3,10 +3,11 @@ import type { AppMode } from './AppMode';
 const MODES: { mode: AppMode; label: string }[] = [
   { mode: 'drift', label: 'Drift' },
   { mode: 'calibrate', label: 'Calibrate' },
+  { mode: 'play', label: 'Play' },
 ];
 
-/** Two-segment Drift / Calibrate switch — lives outside the rails so it
- * stays reachable while Drift hides them. */
+/** Drift / Calibrate / Play switch — lives outside the rails so it stays
+ * reachable while Drift hides them. */
 export class ModeToggle {
   readonly element: HTMLElement;
   private mode: AppMode;

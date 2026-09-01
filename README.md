@@ -29,6 +29,34 @@ Inspired by the idea that good ambient music flows in and out of interest within
 - **Master FX chain** — chorus, glue compression, delay, 14s reverb, stereo widener, tilt EQ, limiter
 - **FFT analysis** — bass / mids / highs / overall bands plus full spectrum for visual detail
 
+### Play — the orchestra as an instrument
+
+A third mode beside Drift and Calibrate. The same voices, the same harmonic
+field, the same room, but with a polyphonic instrument at the front of it.
+
+- **Plays in the key the piece is already in** — the white keys walk the current
+  scale degrees, so the layout follows the harmonic field as it drifts and
+  nothing you play is out of key. Black keys are the passing tones between
+  degrees. A **Chromatic** toggle gives a literal keyboard instead
+- **Eight voices** — Glass, Choir, Bell, Crystal, Strings, Warm, Reed and Ghost,
+  each a playable reading of a voice the orchestra already has. Same timbres,
+  performance envelopes: the generative versions open over two to six seconds,
+  which is right for a bed that swells in and wrong for a key you press
+- **The orchestra ducks behind you** — the Conductor keeps composing, but the
+  ensemble drops about 10dB while notes are held and swells back over four
+  seconds after you stop. Playing *the orchestra*, not over a backing track
+- **In the room, not behind its wall** — the instrument shares the delay,
+  reverb, width and tilt of the space, but joins the chain after the room
+  filter and outside the glue compressor and the session intensity arc. Walking
+  toward the doorway muffles the room; it never muffles your hands
+- **Works with nothing plugged in** — a QWERTY keybed on the tracker layout
+  (`A`–`;` white, `W`/`E`/`T`/`Y`/`U`/`O`/`P` black, `Z`/`X` for octave) and a
+  clickable on-screen keyboard, so Play needs no hardware
+- **Velocity, sustain, bend and mod** — sustain pedal (CC64) holds through
+  key-ups, pitch bend runs ±2 semitones, and the mod wheel opens each voice's
+  filter above its resting brightness rather than being the only thing between
+  you and a muffled instrument
+
 ### Visuals
 
 - **Layered 3D field (Three.js)** — two render layers sharing one audio-driven breath:
@@ -50,6 +78,7 @@ Two edge rails frame an open center, each pairing live data with the knobs that 
 - **Right rail — Visual:** form readout, a **visual scope** (particle population, ghost↔body layer balance, cool↔warm mood, fog depth), the theme toggle, and the visual knob grid
 - **10 knobs** — six sound, four vision (see below)
 - **Piece picker (Calibrate only)** — choose a length and a world and play that piece now, instead of waiting for two weighted draws to agree. Drift keeps its unpredictability; direct control belongs to Calibrate
+- **Play panel (Play only)** — the instrument's own surface in the same slot: connected controller, eight voices, the in-key / chromatic toggle with the field's live key beside it, octave, what is sounding, and a two-octave on-screen keyboard
 - **Knob automator** — slow, phrase-aligned autonomous drift when you leave the controls alone
 - **PerfMonitor** — a dev-only health gate (press **D**) reporting frame rate, audio-context health, console errors, and heap growth
 - **Error overlay** — a clear message if WebGL or audio fails to start
@@ -99,7 +128,8 @@ npm test          # run once
 npm run test:watch
 ```
 
-Unit tests cover music theory helpers and harmonic field transitions.
+Unit tests cover music theory helpers, harmonic field transitions, the Play
+keybed mapping, and MIDI device profiles and learned bindings.
 
 ## Controls
 
@@ -128,11 +158,40 @@ Unit tests cover music theory helpers and harmonic field transitions.
 | Input | Action |
 |-------|--------|
 | **Double-click** or **F11** | Hide / show both rails (full-bleed view) |
-| **D** | Toggle the PerfMonitor health readout |
+| **D** | Toggle the PerfMonitor health readout (Drift and Calibrate — in Play, D is a key) |
 | **Light field / Dark field** | Toggle visual palette (right rail header) |
+| **A**–**;** / **W E T Y U O P** (Play) | Computer keybed — white keys and black keys |
+| **Z** / **X** (Play) | Shift the keybed down / up an octave |
 | **Mov** button | Advance movement phase |
 | **Shift + Mov** | Skip to next movement |
 | **Form** button | Nudge visual morphology emphasis |
+
+## MIDI controllers
+
+Play mode speaks Web MIDI (Chrome, Edge, Safari 18+, Firefox 108+; needs a
+secure context, so `localhost` or HTTPS). Switching to Play asks for
+permission — refusing it just falls back to the computer keyboard.
+
+| Control | Does |
+|---------|------|
+| Keys | Play, velocity-sensitive |
+| Pads 1–8 | Select a voice |
+| Pads 9–16 | Phase · Movement · Space · Inhale · Vacuum · Thin · Form · All notes off |
+| Knobs 1–8 | The sound knobs, with soft takeover — a pot stays inert until it passes through the current value, so it picks the knob up instead of snapping it |
+| Sustain (CC64) | Holds notes through key-up |
+| Pitch bend | ±2 semitones |
+| Mod (CC1) | Opens the voice's filter |
+
+Built against the **Akai MPK Mini** and the **Novation Launchkey Mini**, which
+have factory profiles. Any other controller falls back to a generic profile and
+still plays.
+
+Those profiles are a convenience, not a contract: both units are
+user-programmable and their factory CC assignments differ between hardware
+revisions and between the presets stored on the device. Where a knob or pad
+doesn't land where the profile expects, open **MIDI learn** in the play panel,
+arm the slot, and move the control — the binding wins over the profile and
+persists across sessions.
 
 ## Tech stack
 
@@ -154,8 +213,10 @@ src/
   visual/         Visualizer, ArtDirectorSkill, FluidField, LayerBalance,
                   ScenePalette
   visual/three/   GhostField, ExtrusionField, TrailPass, ghost/milky shaders
+  audio/          ... PlayInstrument, PlayPresets, PlayMapping
+  input/          MidiInput, MidiMap, KeyboardInput, PlayController
   ui/             Controls, SessionReadout, CymaticsOverlay, VisualScope,
-                  KnobAutomator, ThemeToggle
+                  KnobAutomator, ThemeToggle, PlayPanel
   diagnostics/    PerfMonitor
 ```
 
@@ -166,6 +227,7 @@ src/
 - **Swell is balance, not volume** — the ambient curves carry everything one minute and sit near-inaudible under a melody or a texture the next, a swing of about 23dB. Every layer sits on a ring the focus point can reach the edge of, so each one both takes the front and falls all the way back; nothing rests at the centre where it could never recede. The front is never empty
 - **Two rooms, always** — the neighbouring room runs its own key, its own arc and its own voices behind a wall filter. Crossing the threshold hands its key to the main room and gives the neighbour a new one, and the swap happens at the point of deepest blur so it lands inside the smear rather than as a cut
 - Voices never all play at full volume simultaneously
+- **Playing is not conducting** — the instrument takes the front of the mix and the orchestra steps back, but the orchestra never stops composing. The key you are playing in is the key the piece drifted to on its own, and it will drift again underneath you. A note already sounding keeps the pitch it was struck at; only the next one hears the new key
 - **Two creative roles:** the Conductor Skill directs the audio (intensity, stereo image, flourish cadence) and the Art Director Skill directs the visuals (fog, focus, mood, constellations) — both read the same shared harmonic context, so picture and sound stay in step
 - **Visual palette:** strict depth-pass monochrome. Light field (`#ececec`) with dark ink ghosts is the default; dark field inverts to luminous ghosts on a deep `#08080f` ground, with bodies tinted into the same blue-black family
 - **Ink-in-water:** ghosts deposit semi-transparent strokes into a fade buffer each frame; older ink slowly bleaches back toward the field color — Drift toward Mist lengthens the dissolve

@@ -9,6 +9,15 @@ import type { ConductorDirectives } from './ConductorSkill';
 import type { PieceRequest } from './HarmonicField';
 import { RoomWalk } from './RoomWalk';
 import { NeighbourRoom } from './NeighbourRoom';
+import { PlayInstrument } from './PlayInstrument';
+
+/** Mirrors the UI's AppMode without the audio layer reaching up into it. */
+type EngineMode = 'drift' | 'calibrate' | 'play';
+
+/** ~10dB back — present as a bed, no longer competing with your hands. */
+const DUCK_FLOOR = 0.32;
+/** How long after the last note-off before the orchestra starts coming back. */
+const DUCK_HOLD_SEC = 1.2;
 
 export class AudioEngine {
   private readonly padBus: Tone.Gain;
@@ -39,6 +48,19 @@ export class AudioEngine {
   private doorwayPulse = 0;
   /** Movement index whose end-of-piece crossing has already been cued. */
   private forcedForMovement = -1;
+  private readonly playBus: Tone.Gain;
+  private readonly playLimiter: Tone.Limiter;
+  private readonly playInstrument: PlayInstrument;
+  /** True while play mode owns the front of the mix. */
+  private playActive = false;
+  /**
+   * How far the orchestra is pulled back behind the instrument. 1 = full
+   * ensemble, ~0.32 = the bed you play over. Ramped, never written directly.
+   */
+  private ensembleDuck = 1;
+  private duckTarget = 1;
+  /** Seconds left before the ensemble is allowed to swell back. */
+  private duckHold = 0;
   private readonly analyser: Tone.Analyser;
   private readonly limiter: Tone.Limiter;
   private readonly subLimiter: Tone.Limiter;
@@ -50,7 +72,7 @@ export class AudioEngine {
     visual: { ...DEFAULT_KNOBS.visual },
   };
   private running = false;
-  private mode: 'drift' | 'calibrate' = 'drift';
+  private mode: EngineMode = 'drift';
   private lastAppliedSound = { ...DEFAULT_KNOBS.sound };
   private pokeAnchorActivity = DEFAULT_KNOBS.sound.activity;
   private featureFrame = 0;
@@ -142,6 +164,20 @@ export class AudioEngine {
     this.pulseBus.connect(this.pulseSend);
     this.pulseSend.connect(this.reverb);
 
+    // The instrument you play. It joins the chain *after* the room wall and
+    // the glue compressor and outside the intensity gain, so it shares the
+    // room's delay, reverb, width and tilt — it sounds like it is in the same
+    // space — but it does not get muffled when the listener drifts toward the
+    // doorway, is not pumped by the ensemble's compressor, and is not faded
+    // out by the Conductor Skill's session arc. Your hands are not part of
+    // the piece's dynamics. It still passes the analyser, so the cymatics
+    // panel and the visual field react to what you play.
+    this.playBus = new Tone.Gain(0);
+    this.playLimiter = new Tone.Limiter(-6);
+    this.playBus.connect(this.playLimiter);
+    this.playLimiter.connect(this.highpass);
+    this.playInstrument = new PlayInstrument(this.playBus);
+
     // Foundation weight: the Sub knob scales the sub drone (into the pad
     // bus) together with the deep-pressure path above.
     this.foundationBus = new Tone.Gain(1);
@@ -192,6 +228,9 @@ export class AudioEngine {
     this.conductor.setKnobs(this.knobs.sound);
     this.conductor.update(dt);
     this.updateRooms(dt);
+    this.playInstrument.syncContext(this.conductor.getHarmonicContext());
+    this.playInstrument.update(dt);
+    this.updateDuck(dt);
   }
 
   /**
@@ -254,11 +293,16 @@ export class AudioEngine {
     };
   }
 
+  /** Play channel for the visual side — a struck chord blooms the field. */
+  private playChannels() {
+    return { playPulse: this.playActive ? this.playInstrument.getPulse() : 0 };
+  }
+
   setKnobs(knobs: AppKnobs): void {
     // A deliberate Density push in calibrate should be answered by a voice
     // joining right away, not on the next randomly scheduled event.
     const activity = knobs.sound.activity;
-    if (this.mode === 'calibrate' && activity - this.pokeAnchorActivity > 0.1) {
+    if (this.mode !== 'drift' && activity - this.pokeAnchorActivity > 0.1) {
       this.pokeAnchorActivity = activity;
       this.conductor.pokeScheduler();
     } else if (activity < this.pokeAnchorActivity) {
@@ -268,11 +312,70 @@ export class AudioEngine {
     this.applyKnobs(true);
   }
 
-  /** Calibrate steadies the tempo so the Tempo knob acts as a direct lever,
-   * and switches knob ramps from slow glides to under-the-finger response. */
-  setMode(mode: 'drift' | 'calibrate'): void {
+  /** Calibrate and Play steady the tempo so the Tempo knob acts as a direct
+   * lever, and switch knob ramps from slow glides to under-the-finger
+   * response. Play additionally hands the front of the mix to the instrument. */
+  setMode(mode: EngineMode): void {
     this.mode = mode;
-    this.conductor.clock.steadyTempo = mode === 'calibrate';
+    this.conductor.clock.steadyTempo = mode !== 'drift';
+    this.setPlayActive(mode === 'play');
+  }
+
+  getPlayInstrument(): PlayInstrument {
+    return this.playInstrument;
+  }
+
+  /**
+   * Open or close the instrument's path into the mix.
+   *
+   * Leaving play mode releases whatever was being held — otherwise a chord
+   * struck on the way out would hang forever, since nothing else is going to
+   * send the note-offs.
+   */
+  setPlayActive(active: boolean): void {
+    if (active === this.playActive) return;
+    this.playActive = active;
+    if (!active) {
+      this.playInstrument.allNotesOff();
+      this.duckHold = 0;
+    }
+    this.playBus.gain.rampTo(active ? 1 : 0, active ? 0.15 : 0.6);
+  }
+
+  /**
+   * Pull the orchestra back behind the instrument.
+   *
+   * The duck is a third factor in applyBusGains alongside the knob base gains
+   * and the foreground rotation, so none of the three can stomp the others —
+   * the same composition the pan system uses for base pan, offset and width.
+   *
+   * Only the target is written here, once per transition, and the ramp does
+   * the rest: stepping it by hand would schedule five bus ramps every frame
+   * for a move that takes under a second. Down is fast enough that the first
+   * chord is already in front. Coming back waits out a hold first, so the
+   * gaps between phrases don't make the orchestra surge in and out, and then
+   * swells over four seconds rather than snapping.
+   */
+  private updateDuck(dt: number): void {
+    const want = this.playActive && this.playInstrument.isPlaying();
+    if (want) {
+      this.duckHold = DUCK_HOLD_SEC;
+    } else if (this.duckHold > 0) {
+      this.duckHold -= dt;
+    }
+
+    const target = want || this.duckHold > 0 ? DUCK_FLOOR : 1;
+    if (target === this.duckTarget) return;
+    const opening = target > this.duckTarget;
+    this.duckTarget = target;
+    this.ensembleDuck = target;
+    this.applyBusGains(opening ? 4 : 0.25);
+  }
+
+  /** Where the orchestra is headed — 1 = full, DUCK_FLOOR = behind the
+   * instrument. The readout reads this to show whether the bed is pulled back. */
+  getEnsembleDuck(): number {
+    return this.duckTarget;
   }
 
   /** Apply autonomous Conductor directives — call each frame while running. */
@@ -380,7 +483,7 @@ export class AudioEngine {
 
     // Calibrate wants the change audible under the finger; Drift keeps its
     // slow aesthetic glides.
-    const ramp = this.mode === 'calibrate' ? 0.12 : 1;
+    const ramp = this.mode === 'drift' ? 1 : 0.12;
 
     this.tiltEQ.low.rampTo(-3 + s.warmth * 5, ramp);
     this.tiltEQ.high.rampTo(3 - s.warmth * 5, ramp);
@@ -435,11 +538,12 @@ export class AudioEngine {
   private applyBusGains(rampSec: number): void {
     const base = this.baseBusGains;
     const p = this.layerPresence;
-    this.melodyBus.gain.rampTo(base.melody * p.melody, rampSec);
-    this.padBus.gain.rampTo(base.pad * p.pad, rampSec);
-    this.airBus.gain.rampTo(base.air * p.air, rampSec);
-    this.subBus.gain.rampTo(base.sub * p.sub, rampSec);
-    this.pulseBus.gain.rampTo(base.pulse * p.pulse, rampSec);
+    const duck = this.ensembleDuck;
+    this.melodyBus.gain.rampTo(base.melody * p.melody * duck, rampSec);
+    this.padBus.gain.rampTo(base.pad * p.pad * duck, rampSec);
+    this.airBus.gain.rampTo(base.air * p.air * duck, rampSec);
+    this.subBus.gain.rampTo(base.sub * p.sub * duck, rampSec);
+    this.pulseBus.gain.rampTo(base.pulse * p.pulse * duck, rampSec);
   }
 
   /** Knob-derived delay feedback — gesture restores must re-read this
@@ -546,7 +650,11 @@ export class AudioEngine {
   }
 
   getHarmonicContext() {
-    return { ...this.conductor.getHarmonicContext(), ...this.roomChannels() };
+    return {
+      ...this.conductor.getHarmonicContext(),
+      ...this.roomChannels(),
+      ...this.playChannels(),
+    };
   }
 
   requestNextPhase(): void {
@@ -579,6 +687,7 @@ export class AudioEngine {
   dispose(): void {
     if (this.spaceThrowTimeout) clearTimeout(this.spaceThrowTimeout);
     this.neighbour?.dispose();
+    this.playInstrument.dispose();
     Tone.getTransport().stop();
     this.running = false;
   }
