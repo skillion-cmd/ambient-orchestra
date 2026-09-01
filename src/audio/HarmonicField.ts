@@ -24,6 +24,7 @@ import type {
   MelodyPhraseType,
   MovementCharacter,
   MovementPhase,
+  MovementScale,
   SoundKnobs,
 } from './types';
 import {
@@ -54,6 +55,12 @@ const ROOT_WEIGHTS: Record<(typeof ROOTS)[number], number> = {
   A: 1.15,
   Bb: 0.85,
 };
+
+/** An explicit piece to play next, from the Calibrate rail. */
+export interface PieceRequest {
+  scale: MovementScale;
+  character: MovementCharacter;
+}
 
 /** A key to arrive in — used to seed a movement from the neighbouring room. */
 export interface HarmonicSeed {
@@ -103,6 +110,8 @@ export class HarmonicField {
   private pendingBrightness = 0.8;
   private euclideanRotation = 0;
   private accentStep = 0;
+  /** A piece explicitly asked for from the Calibrate rail, consumed once. */
+  private requestedPiece: PieceRequest | null = null;
   private pendingTransitionBloom = false;
   private pendingPhraseCadence: MelodyPhraseType | null = null;
 
@@ -236,6 +245,15 @@ export class HarmonicField {
     return this.movement.jumpToPhase(phase);
   }
 
+  /**
+   * Ask for a specific piece next. Consumed by the next beginMovement, so
+   * the request survives the dissolve bridge rather than being applied to
+   * the movement currently fading out.
+   */
+  requestPiece(request: PieceRequest): void {
+    this.requestedPiece = request;
+  }
+
   /** Start a new movement with harmonic crossfade */
   skipToNextMovement(knobs: SoundKnobs, seed?: HarmonicSeed): void {
     this.beginMovement(this.movement.index + 1, knobs, seed);
@@ -253,12 +271,17 @@ export class HarmonicField {
       this.storedHook = [...this.melodyDegrees.slice(0, 4)];
     }
 
+    const requested = this.requestedPiece;
+    this.requestedPiece = null;
+
     const scale =
+      requested?.scale ??
       readScaleOverride() ??
       pickMovementScale(this.movement.scale, this.movementsSinceEpic);
     this.movementsSinceEpic = scale === 'epic' ? 0 : this.movementsSinceEpic + 1;
 
     const character =
+      requested?.character ??
       readCharacterOverride() ??
       pickMovementCharacter(scale, this.movement.character, knobs.pulse);
 

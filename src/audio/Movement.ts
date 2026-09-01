@@ -48,7 +48,7 @@ const SCALE_SPECS: Record<MovementScale, ScaleSpec> = {
   short: { minSec: 120, maxSec: 240, weight: 0.26 },
   standard: { minSec: 240, maxSec: 420, weight: 0.3 },
   long: { minSec: 540, maxSec: 840, weight: 0.18 },
-  epic: { minSec: 1200, maxSec: 1680, weight: 0.1 },
+  epic: { minSec: 720, maxSec: 900, weight: 0.1 },
 };
 
 export const MOVEMENT_SCALES = Object.keys(SCALE_SPECS) as MovementScale[];
@@ -261,7 +261,7 @@ export function pickPulseProfile(
 }
 
 /**
- * Dev-only duration override — a twenty-five minute movement can't be
+ * Dev-only duration override — a fifteen-minute movement can't be
  * verified by waiting for one. `?scale=epic` forces every movement to a
  * scale so fragments, epics and doorway crossings are all reachable in a
  * single session. Absent in tests (no window) and in normal use.

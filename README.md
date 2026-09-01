@@ -2,7 +2,7 @@
 
 A procedural ambient synth orchestra with a layered monochrome visual field. Dozens of generative voices blend in and out of a slowly evolving harmonic field, paired with an audio-reactive ink-and-tube visual that drifts in and out of focus.
 
-Pieces run anywhere from forty-five seconds to nearly half an hour, the layer holding the foreground rotates continuously, and about a third of them carry no beat at all — the ones that do can put a soft kit right at the front. There is always a second room playing next door; walking through the doorway is how one piece becomes the next.
+Pieces run anywhere from forty-five seconds to a quarter of an hour, the layer holding the foreground rotates continuously, and about a third of them carry no beat at all — the ones that do can put a soft kit right at the front. There is always a second room playing next door; walking through the doorway is how one piece becomes the next.
 
 Inspired by the idea that good ambient music flows in and out of interest within a space — Eno by way of Floating Points, Bicep, Aphex Twin, Caribou, and Nosaj Thing — and by the way the transition spaces at Paradiso blurred one room's set into another's.
 
@@ -14,11 +14,13 @@ Inspired by the idea that good ambient music flows in and out of interest within
 - **Conductor + harmonic field** — Markov mode shifts, chord pools, dream melody phrases with recall, ensemble gestures
 - **Conductor Skill (autonomous)** — a creative-direction layer over the technical conductor: shapes a session-wide **intensity arc** and a per-phase **stereo image** (intimate in drift/exhale, enveloping in bloom/hang)
 - **Movement arc** — six phases per movement (Heat Haze → Gather → Bloom → Hang → Morph → Exhale) with a bar-synced clock
-- **Duration classes** — every movement draws a length: `fragment` (45–95s), `short`, `standard`, `long`, or a rare `epic` of 20–28 minutes, held back until enough pieces have passed that arriving at one still means something. Phase timelines compress for a fragment and gain a third crest for the long forms
+- **Duration classes** — every movement draws a length: `fragment` (45–95s), `short`, `standard`, `long`, or a rare `epic` of 12–15 minutes, held back until enough pieces have passed that arriving at one still means something. Phase timelines compress for a fragment and gain a third crest for the long forms
 - **Foreground rotation** — a focus point wanders a ring of layers so pad, melody, air, sub and pulse trade the front of the mix continuously; whichever layer is nearest sits at full presence and the rest fall away to near-inaudible, without ever quite dropping out
 - **The room next door** — a second generative engine in its own key, behind a lowpass wall and a distance send. A listener walk drifts toward it and back; crossing the threshold trades the two rooms
 - **Pulse, sometimes** — a soft kit (euclidean kick, shaker and woody click, swung and humanised) on its own dry bus, on the movements that draw one
 - **Night pieces (Burial)** — about a fifth of movements come up as a night piece: a 2-step shuffle at 128–140 where the kick lands on the one and then skips the third beat, a flat backbeat against it, hats filling the gaps unevenly, minor-weighted harmony, and vinyl surface noise running the whole way through. Timing offsets are fixed per pattern rather than jittered per hit — sequenced by eye, so the same hits land in the same wrong places every bar
+- **Night pulls the field dark** — a night piece switches the visual field to the dark ground for its duration and returns to your chosen theme when it ends; the theme button sets that base preference rather than being overwritten
+- **Engine on the audio clock** — scheduling is driven by the audio context clock on a timer, not by the frame loop, so a backgrounded tab keeps composing instead of holding whatever texture it was on, and a low frame rate no longer slows the music down
 - **Half-time decoupling** — the transport reaches 140, but everything melodic is stretched by whichever power of two brings its felt pulse back near the resting tempo, so a night piece's pads hang under its drums instead of sprinting with them
 - **Phrase-aligned automation** — autonomous knob drift locks to 8/16-bar boundaries and moves in coordinated clusters, so the piece reads as sections rather than arrhythmic drift
 - **Flourishes throughout** — sparkle runs and melodic flurries recur on a cadence that ebbs and flows within each movement (denser in bloom/hang, sparser in the troughs)
@@ -47,6 +49,7 @@ Two edge rails frame an open center, each pairing live data with the knobs that 
 - **Left rail — Audio:** movement / phase readout, a **cymatics panel** (scrolling waveform, beat markers, bass/mid/high spectrum, live key + mode + chord function, and a console-style ensemble meter), and the audio knob grid
 - **Right rail — Visual:** form readout, a **visual scope** (particle population, ghost↔body layer balance, cool↔warm mood, fog depth), the theme toggle, and the visual knob grid
 - **10 knobs** — six sound, four vision (see below)
+- **Piece picker (Calibrate only)** — choose a length and a world and play that piece now, instead of waiting for two weighted draws to agree. Drift keeps its unpredictability; direct control belongs to Calibrate
 - **Knob automator** — slow, phrase-aligned autonomous drift when you leave the controls alone
 - **PerfMonitor** — a dev-only health gate (press **D**) reporting frame rate, audio-context health, console errors, and heap growth
 - **Error overlay** — a clear message if WebGL or audio fails to start
@@ -71,7 +74,7 @@ for a particular one is impractical. Three dev-only query params force the draw:
 
 - `?scale=fragment` (or `short`, `standard`, `long`, `epic`) — pins every
   movement to that duration class, the only way to hear a 45-second fragment or
-  a 25-minute epic on demand.
+  a 15-minute epic on demand.
 - `?pulse=kit` (or `felt`, `silent`) — pins the pulse profile. A third of
   movements carry no beat and a fragment never gets a kit, so this is how you
   reach a particular one on demand.
@@ -159,7 +162,7 @@ src/
 ## Design notes
 
 - **Percussion is common, never assumed** — at rest about a third of movements draw a silent pulse profile and never hear one, a quarter take the felt-not-heard sub heartbeat, and the rest get a full kit. Tempo steers that hard, from a kit on a fifth of movements at the bottom of the knob to half of them at the top. A fragment never gets a kit: there is no room to establish a pattern and leave again
-- **Duration is structure** — a one-minute fragment next to a twenty-five-minute epic is what makes a sequence read as composed rather than generated, so the length of a piece is drawn before its shape is
+- **Duration is structure** — a one-minute fragment next to a fifteen-minute epic is what makes a sequence read as composed rather than generated, so the length of a piece is drawn before its shape is
 - **Swell is balance, not volume** — the ambient curves carry everything one minute and sit near-inaudible under a melody or a texture the next, a swing of about 23dB. Every layer sits on a ring the focus point can reach the edge of, so each one both takes the front and falls all the way back; nothing rests at the centre where it could never recede. The front is never empty
 - **Two rooms, always** — the neighbouring room runs its own key, its own arc and its own voices behind a wall filter. Crossing the threshold hands its key to the main room and gives the neighbour a new one, and the swap happens at the point of deepest blur so it lands inside the smear rather than as a cut
 - Voices never all play at full volume simultaneously

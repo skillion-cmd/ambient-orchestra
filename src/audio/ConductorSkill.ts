@@ -89,7 +89,7 @@ export class ConductorSkill {
     const scale = ctx.movementScale;
 
     // Session swell, its period taken from the movement so a fragment gets
-    // one breath and a twenty-five minute piece gets three or four.
+    // one breath and a quarter-hour piece gets three or four.
     const period = Math.max(45, Math.min(420, ctx.movementDurationSec / 3));
     const swell = 0.5 + 0.5 * Math.sin((this.elapsed / period) * Math.PI * 2 - Math.PI / 2);
     const depth = SWELL_DEPTH[scale];

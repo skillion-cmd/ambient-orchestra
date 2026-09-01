@@ -6,6 +6,7 @@ import type { AppKnobs, AudioFeatures } from './types';
 import { DEFAULT_KNOBS } from './types';
 import { NEUTRAL_PRESENCE, type LayerPresence } from './LayerPresence';
 import type { ConductorDirectives } from './ConductorSkill';
+import type { PieceRequest } from './HarmonicField';
 import { RoomWalk } from './RoomWalk';
 import { NeighbourRoom } from './NeighbourRoom';
 
@@ -520,6 +521,16 @@ export class AudioEngine {
     return features;
   }
 
+  /**
+   * The audio context clock. Advances whenever sound is actually being
+   * produced and stops when the context suspends, which makes it the only
+   * honest source of engine time — a frame clock stops in a hidden tab and
+   * lags on a slow one, while the music carries on either way.
+   */
+  audioTime(): number {
+    return Tone.now();
+  }
+
   /** Current transport tempo — surfaced for the dev PerfMonitor readout. */
   getBpm(): number {
     return Tone.getTransport().bpm.value;
@@ -543,6 +554,16 @@ export class AudioEngine {
   }
 
   requestNextMovement(): void {
+    this.conductor.requestNextMovement();
+  }
+
+  /**
+   * Play a specific piece next. Queues the request, then triggers the same
+   * dissolve-and-skip the Mov button uses, so the current piece leaves the
+   * way it always does instead of being cut.
+   */
+  requestPiece(request: PieceRequest): void {
+    this.conductor.harmonicField.requestPiece(request);
     this.conductor.requestNextMovement();
   }
 

@@ -459,3 +459,68 @@ body[data-mode='drift'] .rail {
   color: var(--ao-error-text);
   letter-spacing: 0.04em;
 }
+
+/* ——— Piece picker (Calibrate only) ——— */
+/* Drift is meant to be unpredictable; direct control belongs to Calibrate. */
+body[data-mode='drift'] .piece-picker {
+  display: none;
+}
+
+.piece-picker {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ao-border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.piece-picker-label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ao-text-muted);
+}
+
+.piece-picker-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.piece-picker-btn {
+  flex: 1 1 auto;
+  min-width: 34px;
+  padding: 3px 5px;
+  font: inherit;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ao-text-muted);
+  background: transparent;
+  border: 1px solid var(--ao-border);
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.piece-picker-btn:hover:not(:disabled) {
+  color: var(--ao-text);
+  border-color: color-mix(in srgb, var(--ao-text) 32%, transparent);
+}
+
+.piece-picker-btn.is-active {
+  color: var(--ao-text);
+  border-color: color-mix(in srgb, var(--ao-text) 45%, transparent);
+}
+
+.piece-picker-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.piece-picker-play {
+  flex: 0 0 auto;
+  min-width: 46px;
+  color: var(--ao-text);
+  border-color: color-mix(in srgb, var(--ao-text) 45%, transparent);
+}
