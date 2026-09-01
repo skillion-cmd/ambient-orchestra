@@ -4,15 +4,18 @@ import { Visualizer } from './visual/Visualizer';
 import { ArtDirectorSkill, type ArtDirectorDirectives } from './visual/ArtDirectorSkill';
 import { Controls } from './ui/Controls';
 import { SessionReadout } from './ui/SessionReadout';
+import { PiecePicker } from './ui/PiecePicker';
 import { ThemeToggle } from './ui/ThemeToggle';
 import { CymaticsOverlay } from './ui/CymaticsOverlay';
 import { VisualScope } from './ui/VisualScope';
 import { PerfMonitor } from './diagnostics/PerfMonitor';
-import { applyUiTheme, loadStoredTheme, storeTheme } from './visual/ScenePalette';
+import { applyUiTheme, loadStoredTheme, storeTheme, type SceneTheme } from './visual/ScenePalette';
 import { loadStoredKnobs, loadStoredMode, storeKnobs, storeMode, type AppMode } from './ui/AppMode';
 import { ModeToggle } from './ui/ModeToggle';
 import { VisualModeToggle } from './ui/VisualModeToggle';
 import { loadStoredVisualMode } from './visual/VisualMode';
+import { clockStep } from './audio/EngineClock';
+import type { MovementCharacter } from './audio/types';
 
 const initialTheme = loadStoredTheme();
 applyUiTheme(initialTheme);
@@ -76,7 +79,9 @@ const sessionReadout = new SessionReadout(
   () => audioEngine.requestNextMovement(),
 );
 const cymaticsOverlay = new CymaticsOverlay(leftData);
+const piecePicker = new PiecePicker((request) => audioEngine.requestPiece(request));
 leftData.insertBefore(sessionReadout.element, leftData.firstChild);
+leftData.appendChild(piecePicker.element);
 leftKnobs.appendChild(controls.audioElement);
 
 // ——— Right rail: visual ———
@@ -84,11 +89,10 @@ const visualScope = new VisualScope(rightData, () => visualizer?.requestNextForm
 rightKnobs.appendChild(controls.visualElement);
 
 const themeToggle = new ThemeToggle(initialTheme, (theme) => {
+  // Store the preference; applyFieldTheme decides what the field actually
+  // shows, since a running night piece keeps the dark field until it ends.
   storeTheme(theme);
-  applyUiTheme(theme);
-  visualizer?.setTheme(theme);
-  cymaticsOverlay.refreshTheme();
-  visualScope.refreshTheme();
+  applyFieldTheme(audioEngine.getHarmonicContext().character);
 });
 rightToggleSlot.appendChild(themeToggle.element);
 
@@ -96,6 +100,24 @@ const visualModeToggle = new VisualModeToggle(loadStoredVisualMode(), (visualMod
   visualizer?.setVisualMode(visualMode);
 });
 rightToggleSlot.appendChild(visualModeToggle.element);
+
+/**
+ * Night pieces pull the field dark for their duration.
+ *
+ * The theme button still sets the base preference and is what a night piece
+ * returns to when it ends — a piece borrows the field, it doesn't overwrite
+ * a choice you made deliberately.
+ */
+let appliedTheme: SceneTheme = initialTheme;
+function applyFieldTheme(character: MovementCharacter): void {
+  const want: SceneTheme = character === 'night' ? 'dark' : themeToggle.getTheme();
+  if (want === appliedTheme) return;
+  appliedTheme = want;
+  applyUiTheme(want);
+  visualizer?.setTheme(want);
+  cymaticsOverlay.refreshTheme();
+  visualScope.refreshTheme();
+}
 
 function setMode(next: AppMode): void {
   mode = next;
@@ -116,7 +138,34 @@ controls.setMode(mode);
 audioEngine.setMode(mode);
 
 let lastTime = performance.now();
+let lastAudioTime = 0;
 let running = false;
+
+/**
+ * Advance the engine by however much audio time has passed.
+ *
+ * This is deliberately not driven by requestAnimationFrame. rAF stops in a
+ * hidden tab, which used to freeze the Conductor while Tone's transport
+ * kept firing the loops already running — the music kept sounding but
+ * stopped composing. And rAF deltas were capped per frame, so any frame
+ * rate below 20fps advanced the piece slower than real time. Taking time
+ * from the audio clock on a timer fixes both, and a tab making sound is
+ * exempt from the heavy timer throttling browsers apply to idle ones.
+ */
+function advanceEngine(): void {
+  if (!running) return;
+
+  const { steps, consumedTo } = clockStep(audioEngine.audioTime(), lastAudioTime);
+  lastAudioTime = consumedTo;
+
+  for (const step of steps) {
+    audioEngine.update(step);
+    audioEngine.applyDirectives(conductorSkill.update(audioEngine.getHarmonicContext(), step));
+  }
+}
+
+const ENGINE_TICK_MS = 100;
+setInterval(advanceEngine, ENGINE_TICK_MS);
 
 function loop(now: number): void {
   requestAnimationFrame(loop);
@@ -125,14 +174,18 @@ function loop(now: number): void {
   lastTime = now;
 
   if (running && visualizer) {
-    audioEngine.update(dt);
+    // Keep the engine in step with the audio clock on every visible frame
+    // too, so a foregrounded tab still gets fine-grained scheduling rather
+    // than the timer's coarser cadence.
+    advanceEngine();
+
     const features = audioEngine.getAudioFeatures();
     const harmonic = audioEngine.getHarmonicContext();
 
-    // Autonomous creative direction — Conductor shapes audio, Art Director visuals.
-    audioEngine.applyDirectives(conductorSkill.update(harmonic, dt));
+    // Visual direction stays on the frame clock — it is what the eye sees.
     lastArt = artDirectorSkill.update(harmonic, features, dt);
     visualizer.applyDirectives(lastArt);
+    applyFieldTheme(harmonic.character);
 
     controls.update(dt, harmonic);
     const visualReadout = visualizer.getReadoutState(harmonic);
@@ -170,6 +223,7 @@ startBtn.addEventListener('click', async () => {
   if (!visualizer) return;
   try {
     await audioEngine.start();
+    lastAudioTime = audioEngine.audioTime();
     running = true;
     overlay.classList.add('hidden');
     railLeft.hidden = false;

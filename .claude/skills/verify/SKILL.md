@@ -52,12 +52,23 @@ Flows that matter:
   forced as each movement runs out, and shows up as `between rooms` in the
   left-rail sub-line, followed by a new movement index.
 
+- The Calibrate rail has a piece picker (`.piece-picker`, hidden in Drift):
+  a length row then an `OPEN | NIGHT | PLAY` row. Clicking Play queues the
+  choice and triggers the usual dissolve-and-skip, so allow ~25s before the
+  new piece reports in the readout.
+
 Screenshots after ~5s of runtime give the trail buffer time to develop —
 a fresh switch looks empty.
 
 ## Gotchas
 
 - `/favicon.ico` 404s in the console — pre-existing, ignore.
+- The engine no longer runs on `requestAnimationFrame` — it advances from
+  the audio clock on a `setInterval`. To simulate a backgrounded tab, stub
+  `window.requestAnimationFrame` so it *stores* the pending callback rather
+  than dropping it, then restore it and re-invoke that callback; the frame
+  loop re-schedules itself through `window.requestAnimationFrame`, so a
+  naive `() => 0` stub kills the loop permanently and can't be resumed.
 - The rails are hidden in Drift mode (`body[data-mode='drift'] .rail`), so an
   element screenshot of `#rail-left` hangs until it times out. Click
   `#mode-toggle`'s Calibrate button first. Reading rail text via

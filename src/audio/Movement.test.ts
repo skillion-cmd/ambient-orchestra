@@ -188,9 +188,9 @@ describe('pickMovementScale', () => {
     const durations = MOVEMENT_SCALES.map(
       (scale) => new Movement(0, 'classic', scale).durationSec,
     );
-    // A fragment is under two minutes; an epic is over twenty.
+    // A fragment is under two minutes; an epic runs past twelve.
     expect(Math.min(...durations)).toBeLessThan(120);
-    expect(Math.max(...durations)).toBeGreaterThan(1200);
+    expect(Math.max(...durations)).toBeGreaterThan(720);
   });
 });
 

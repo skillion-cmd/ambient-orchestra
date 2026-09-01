@@ -15,7 +15,7 @@ export type MovementPhase =
 
 /**
  * How long a movement runs. Ambient records don't hold one length — a
- * twenty-five minute piece next to a one-minute fragment is what makes a
+ * fifteen-minute piece next to a one-minute fragment is what makes a
  * sequence read as composed rather than generated.
  */
 export type MovementScale = 'fragment' | 'short' | 'standard' | 'long' | 'epic';
@@ -101,7 +101,7 @@ export interface HarmonicContext {
   movementProgress: number;
   /** Movement number (always increasing, never loops) */
   movementIndex: number;
-  /** Duration class of the current movement — a fragment or a 25-minute epic */
+  /** Duration class of the current movement — a fragment or a quarter-hour epic */
   movementScale: MovementScale;
   movementDurationSec: number;
   movementElapsedSec: number;
