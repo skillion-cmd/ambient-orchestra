@@ -1,4 +1,4 @@
-import type { HarmonicContext } from '../audio/types';
+import type { HarmonicContext, NightGroove } from '../audio/types';
 import { PHASE_LABELS } from '../audio/Movement';
 
 export interface MovementReadoutState {
@@ -16,6 +16,13 @@ function clock(seconds: number): string {
 }
 
 /** Audio-side session readout — movement, phase, progress. Lives in the left rail. */
+/** What the sub-line calls each groove. */
+const GROOVE_LABELS: Record<NightGroove, string> = {
+  'two-step': 'night · 2-step',
+  house: 'night · house',
+  techno: 'night · techno',
+};
+
 export class SessionReadout {
   readonly element: HTMLElement;
   private readonly movIndexEl: HTMLElement;
@@ -73,7 +80,10 @@ export class SessionReadout {
     } else if (harmonic.roomCorridor > 0.3) {
       this.subEl.textContent = 'between rooms';
     } else if (harmonic.character === 'night') {
-      this.subEl.textContent = `${harmonic.movementScale} · night`;
+      // Which night, not just that it is one — three grooves at three tempos
+      // are three different rooms, and the readout is where you find out
+      // which one you walked into.
+      this.subEl.textContent = `${harmonic.movementScale} · ${GROOVE_LABELS[harmonic.nightGroove]}`;
     } else {
       this.subEl.textContent = harmonic.movementScale;
     }

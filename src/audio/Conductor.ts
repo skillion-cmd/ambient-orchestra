@@ -7,10 +7,11 @@ import type {
   MovementCharacter,
   HarmonicContext,
   MelodyPhraseType,
+  NightGroove,
   SoundKnobs,
   VoiceGroup,
 } from './types';
-import { EMPTY_GROUP_ACTIVITY, VOICE_GROUPS } from './types';
+import { EMPTY_GROUP_ACTIVITY, isFourFour, VOICE_GROUPS } from './types';
 import { HarmonicField, type HarmonicSeed } from './HarmonicField';
 
 const ENSEMBLE_VOICES = [
@@ -36,13 +37,17 @@ const CORE_IDS = new Set([
 ]);
 
 /**
- * On a night piece the 2-step and the surface noise are the piece, not
- * texture on top of it. Both are activated once and then left alone, so if
- * the voice trimmer culled either one it would be gone for the rest of the
- * movement — a groove that evaporates halfway through, or crackle that
- * stops and never returns.
+ * On a night piece the groove and the surface noise are the piece, not
+ * texture on top of it. All of these are activated once and then left alone,
+ * so if the voice trimmer culled one it would be gone for the rest of the
+ * movement — a groove that evaporates halfway through, crackle that stops and
+ * never returns, or a floor that loses its bassline while the kick carries on
+ * over nothing.
  */
-const NIGHT_CORE_IDS = new Set(['pulseKit', 'vinylCrackle']);
+const NIGHT_CORE_IDS = new Set(['pulseKit', 'vinylCrackle', 'clubBass', 'clubStab']);
+
+/** Voices that only exist on a four-on-the-floor night. */
+const CLUB_IDS = ['clubBass', 'clubStab'] as const;
 
 function gaussianRandom(): number {
   let u = 0;
@@ -81,6 +86,9 @@ export class Conductor {
   private started = false;
   private lastPhase = 'drift';
   private lastCharacter: MovementCharacter | null = null;
+  private lastGroove: NightGroove | null = null;
+  /** Whether the club voices should be sounding, as of the last check. */
+  private clubVoicesWanted = false;
   private lastMelodyIndex = 0;
   private pendingClipTimeout: ReturnType<typeof setTimeout> | null = null;
   private pendingGesture = false;
@@ -192,11 +200,13 @@ export class Conductor {
     // Surface noise runs for the whole of a night piece rather than being
     // scheduled like the other textures — crackle that came and went would
     // read as a synth part instead of as the medium.
-    if (ctx.character !== this.lastCharacter) {
+    if (ctx.character !== this.lastCharacter || ctx.nightGroove !== this.lastGroove) {
       this.lastCharacter = ctx.character;
+      this.lastGroove = ctx.nightGroove;
       if (ctx.character === 'night') this.activateVoice('vinylCrackle', ctx);
       else this.voices.find((v) => v.id === 'vinylCrackle')?.exit();
     }
+    this.syncClubVoices(ctx);
 
     if (ctx.movementPhase !== this.lastPhase) {
       this.cancelClipTimeout();
@@ -654,6 +664,35 @@ export class Conductor {
       this.voices.find((v) => v.id === 'rhythmicPulse')?.exit();
     } else if (ctx.pulseProfile === 'felt') {
       this.activateVoice('rhythmicPulse', ctx);
+    }
+  }
+
+  /**
+   * The bassline and the stabs exist exactly as long as the four-four does.
+   *
+   * They are activated together with the kit rather than scheduled like the
+   * other voices, for the same reason the crackle is: on a club piece these
+   * are not textures that come and go, they are the record. And they leave
+   * the moment the groove does — a house bassline still walking under a
+   * 2-step is the wrong record.
+   */
+  private syncClubVoices(ctx: HarmonicContext): void {
+    const groove =
+      ctx.character === 'night' && ctx.pulseProfile === 'kit' && isFourFour(ctx.nightGroove);
+    // They follow the kit rather than a phase. The kit has several ways in —
+    // the gather starts one, the bloom starts one that was skipped over, a
+    // requested piece starts one mid-movement — and hanging the bassline off
+    // any single one of them left it silent down the others. So this runs
+    // every step and asks the only question that matters: is there a
+    // four-four playing? A bassline walking through the drift before the
+    // drums arrive is a different piece of music from the one about to start.
+    const kitPlaying = this.voices.find((v) => v.id === 'pulseKit')?.isActive() ?? false;
+    const wanted = groove && kitPlaying;
+    if (wanted === this.clubVoicesWanted) return;
+    this.clubVoicesWanted = wanted;
+    for (const id of CLUB_IDS) {
+      if (wanted) this.activateVoice(id, ctx);
+      else this.voices.find((v) => v.id === id)?.exit();
     }
   }
 

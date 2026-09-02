@@ -13,8 +13,10 @@ import {
   pickMovementCharacter,
   pickMovementScale,
   pickMovementVariant,
+  pickNightGroove,
   pickPulseProfile,
   readCharacterOverride,
+  readGrooveOverride,
   readPulseOverride,
   readScaleOverride,
 } from './Movement';
@@ -25,6 +27,7 @@ import type {
   MovementCharacter,
   MovementPhase,
   MovementScale,
+  NightGroove,
   SoundKnobs,
 } from './types';
 import {
@@ -121,7 +124,9 @@ export class HarmonicField {
     // that happened not to draw one.
     const forcedScale = readScaleOverride();
     const forcedPulse = readPulseOverride();
-    const forcedCharacter = readCharacterOverride();
+    const forcedGroove = readGrooveOverride();
+    // Asking for a groove is asking for the night it belongs to.
+    const forcedCharacter = readCharacterOverride() ?? (forcedGroove ? 'night' : null);
     if (forcedScale || forcedPulse || forcedCharacter) {
       const scale = forcedScale ?? 'standard';
       const character = forcedCharacter ?? 'open';
@@ -137,6 +142,7 @@ export class HarmonicField {
             character,
           ),
         character,
+        forcedGroove ?? pickNightGroove('two-step', DEFAULT_KNOBS.sound.pulse),
       );
       this.transitionSec = this.movement.transitionSec();
       if (character === 'night') this.mode = this.pickNewMode('night');
@@ -158,7 +164,13 @@ export class HarmonicField {
 
   advance(dt: number, clock: MusicalClock, knobs: SoundKnobs): void {
     this.evolutionPhase += dt * 0.0137;
-    clock.update(dt, this.movement.phase, knobs, this.movement.character);
+    clock.update(
+      dt,
+      this.movement.phase,
+      knobs,
+      this.movement.character,
+      this.movement.nightGroove,
+    );
 
     if (
       this.movement.phase === 'dissolve' &&
@@ -280,9 +292,11 @@ export class HarmonicField {
       pickMovementScale(this.movement.scale, this.movementsSinceEpic);
     this.movementsSinceEpic = scale === 'epic' ? 0 : this.movementsSinceEpic + 1;
 
+    const forcedGroove = readGrooveOverride();
     const character =
       requested?.character ??
       readCharacterOverride() ??
+      (forcedGroove ? 'night' : null) ??
       pickMovementCharacter(scale, this.movement.character, knobs.pulse);
 
     this.movement = new Movement(
@@ -292,6 +306,7 @@ export class HarmonicField {
       readPulseOverride() ??
         pickPulseProfile(scale, knobs.pulse, knobs.activity, character),
       character,
+      forcedGroove ?? pickNightGroove(this.movement.nightGroove, knobs.pulse),
     );
     this.transitionSec = this.movement.transitionSec();
 
@@ -427,6 +442,7 @@ export class HarmonicField {
       movementElapsedSec: this.movement.elapsed,
       pulseProfile: this.movement.pulseProfile,
       character: this.movement.character,
+      nightGroove: this.movement.nightGroove,
       harmonicBeatScale: clock?.harmonicBeatScale() ?? 1,
       ensemblePulse: 0,
       gestureId: 0,

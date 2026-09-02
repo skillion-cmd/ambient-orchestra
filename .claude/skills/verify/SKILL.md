@@ -46,8 +46,10 @@ Flows that matter:
 - Movements draw a random length and pulse profile, so most paths are
   unreachable by waiting. Force them: `?scale=fragment|short|standard|long|epic`
   `?pulse=silent|felt|kit` and `?character=open|night` (they compose).
-  `?character=night` is the only practical way to hear the 2-step: it forces
-  garage tempo, the minor mode pool, and the vinyl crackle bed. `?scale=fragment` also gets you
+  `?character=night` is the only practical way to hear a night piece: it
+  forces a club tempo, the minor mode pool, and the vinyl crackle bed.
+  `?groove=house|techno|two-step` pins which night and implies
+  `character=night`. `?scale=fragment` also gets you
   a doorway crossing every ~80s — the walk into the neighbouring room is
   forced as each movement runs out, and shows up as `between rooms` in the
   left-rail sub-line, followed by a new movement index.
@@ -78,6 +80,34 @@ Flows that matter:
     from before `blend` existed backfills rather than resetting.
   - Restoring `ao-mode: 'play'` from storage arms the keybed on load, so a
     seeded Play session answers typed keys without touching the mode toggle.
+
+### Verifying a groove
+
+Patterns are the ground truth and they are readable straight off the voice,
+which is far quicker and less ambiguous than onset-detecting the audio:
+
+```js
+const kit = window.__ao.conductor['voices'].find((v) => v.id === 'pulseKit');
+// kit.kickPattern / hatPattern / openHatPattern / clapPattern / clickPattern
+// kit.swing, kit.nudges, kit.builtStyle
+```
+
+`clubBass.pattern` (per-step `{degree, octave}`) and `clubStab.pattern` read
+the same way. Render a 16-boolean pattern as `x`/`.` and a four-four kick is
+`x...x...x...x...` at a glance.
+
+Two things gate them. **The kit starts at the gather**, so a `?scale=long`
+piece sits in drift for minutes first — jump it:
+`window.__ao.conductor.harmonicField.getMovement().jumpToPhase('gather')`,
+then allow ~20s for the fade-in. And the **bassline and stabs follow the
+kit**, so they are absent until it is actually active.
+
+The sidechain pump can be seen but not precisely measured from the main
+thread: polling `clubBass.duck.gain.value` shows it dipping once per beat and
+recovering, but a busy-wait loop reads a flat 1.0 — blocking the main thread
+stops Tone's transport scheduling the pump at all — and `getValueAtTime` does
+not report automation scheduled ahead. Poll while yielding, and expect the
+observed floor to sit above the real one.
 
 ### Verifying the mix, not just the DOM
 
@@ -146,11 +176,18 @@ it was long enough. Filter tone.js frames out of the stack to see the app
 frame that scheduled the event.
 
 To check the low end, read the output analyser's `getFloatFrequencyData` in
-two bands: worst-frame peak below 32Hz against 32–120Hz. Sub-audible energy is
+two bands: worst-frame peak below 30Hz against 36–120Hz. Sub-audible energy is
 inaudible by definition, so it cannot be found by listening and does not show
 up in a peak meter either — the gap between those two bands is the number that
-moves. It should sit around 12dB; when it was 3.6dB the kick's fundamental was
-at 18–29Hz.
+moves. Expect around 20dB.
+
+**Set `fftSize = 32768` for this and nothing less.** The default 2048 gives
+23Hz-wide bins, so the lowest usable bin is centred at 23Hz and a 37Hz kick
+smears straight into it — the "sub-audible" reading then mostly measures how
+much *audible* bass there is, and moves 10dB between runs of the same build
+for no reason. At 32768 the bins are ~1.5Hz and the two bands are actually
+separate. Leave a gap between them (30Hz and 36Hz, not 32 and 32) so
+spectral leakage from the kick's fundamental has somewhere to go.
 
 Screenshots after ~5s of runtime give the trail buffer time to develop —
 a fresh switch looks empty.

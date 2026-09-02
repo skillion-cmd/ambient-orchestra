@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bpmFor, harmonicBeatScale, MAX_BPM } from './MusicalClock';
 import type { MovementPhase } from './types';
+import { NIGHT_GROOVES } from './types';
 
 const PHASES: MovementPhase[] = ['drift', 'gather', 'bloom', 'hang', 'dissolve', 'exhale'];
 
@@ -61,5 +62,62 @@ describe('harmonicBeatScale', () => {
     const fast = seconds(140);
     expect(fast / slow).toBeGreaterThan(0.75);
     expect(fast / slow).toBeLessThan(1.25);
+  });
+});
+
+describe('bpmFor — night grooves', () => {
+  it('puts each groove in its own band', () => {
+    // House sits under garage, Detroit over it. The bands are narrow: the
+    // knob nudges within one rather than sweeping between them.
+    expect(bpmFor('gather', 0, false, 'night', 'house')).toBe(120);
+    expect(bpmFor('gather', 1, false, 'night', 'house')).toBe(127);
+    expect(bpmFor('gather', 0, false, 'night', 'two-step')).toBe(128);
+    expect(bpmFor('gather', 1, false, 'night', 'two-step')).toBe(138);
+    expect(bpmFor('gather', 0, false, 'night', 'techno')).toBe(130);
+    expect(bpmFor('gather', 1, false, 'night', 'techno')).toBe(140);
+  });
+
+  it('keeps house under techno wherever the knob sits', () => {
+    for (const pulse of [0, 0.25, 0.5, 0.75, 1]) {
+      expect(bpmFor('gather', pulse, false, 'night', 'house')).toBeLessThan(
+        bpmFor('gather', pulse, false, 'night', 'techno'),
+      );
+    }
+  });
+
+  it('sways a couple of BPM across the arc, and no more', () => {
+    for (const groove of NIGHT_GROOVES) {
+      const flat = bpmFor('gather', 0.5, false, 'night', groove);
+      const peak = bpmFor('bloom', 0.5, false, 'night', groove);
+      const end = bpmFor('exhale', 0.5, false, 'night', groove);
+      expect(peak).toBeGreaterThan(flat);
+      expect(end).toBeLessThan(flat);
+      expect(peak - end).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it('never exceeds the transport ceiling', () => {
+    for (const groove of NIGHT_GROOVES) {
+      for (const phase of PHASES) {
+        expect(bpmFor(phase, 1, true, 'night', groove)).toBeLessThanOrEqual(MAX_BPM);
+      }
+    }
+  });
+
+  it('leaves open pieces alone', () => {
+    // The groove argument is meaningless off a night piece and must not leak.
+    for (const groove of NIGHT_GROOVES) {
+      expect(bpmFor('gather', 0.5, false, 'open', groove)).toBe(
+        bpmFor('gather', 0.5, false, 'open'),
+      );
+    }
+  });
+
+  it('holds a club tempo where the melodic side halves', () => {
+    // The whole reason a club groove and an ambient orchestra can be one
+    // piece: at these tempos the melodic clock is stretched by two.
+    for (const groove of NIGHT_GROOVES) {
+      expect(harmonicBeatScale(bpmFor('gather', 0.5, false, 'night', groove))).toBe(2);
+    }
   });
 });

@@ -7,11 +7,13 @@ import {
   pickMovementCharacter,
   pickMovementScale,
   pickMovementVariant,
+  pickNightGroove,
   pickPulseProfile,
   type MovementCharacter,
   type MovementScale,
   type MovementVariant,
 } from './Movement';
+import { isFourFour, NIGHT_GROOVES } from './types';
 
 const VARIANTS: MovementVariant[] = [
   'classic',
@@ -265,5 +267,41 @@ describe('pickPulseProfile under a night character', () => {
         expect(pickPulseProfile(scale, 0, 0, 'night')).toBe('kit');
       }
     }
+  });
+});
+
+describe('pickNightGroove', () => {
+  it('never repeats the groove that just played', () => {
+    for (const previous of NIGHT_GROOVES) {
+      for (let i = 0; i < 200; i++) {
+        expect(pickNightGroove(previous, Math.random())).not.toBe(previous);
+      }
+    }
+  });
+
+  it('only ever returns a real groove', () => {
+    for (let i = 0; i < 200; i++) {
+      expect(NIGHT_GROOVES).toContain(pickNightGroove('house', Math.random()));
+    }
+  });
+
+  it('leans toward techno at the top of the Tempo knob and away at the bottom', () => {
+    const share = (pulse: number) => {
+      let techno = 0;
+      for (let i = 0; i < 4000; i++) {
+        if (pickNightGroove('house', pulse) === 'techno') techno++;
+      }
+      return techno / 4000;
+    };
+    // Both draws exclude house, so this is techno against 2-step only.
+    expect(share(1)).toBeGreaterThan(share(0) + 0.1);
+  });
+});
+
+describe('isFourFour', () => {
+  it('is the two club grooves and not the 2-step', () => {
+    expect(isFourFour('house')).toBe(true);
+    expect(isFourFour('techno')).toBe(true);
+    expect(isFourFour('two-step')).toBe(false);
   });
 });

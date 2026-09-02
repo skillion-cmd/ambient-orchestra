@@ -39,6 +39,9 @@ export class AudioEngine {
   private readonly subBus: Tone.Gain;
   private readonly pulseBus: Tone.Gain;
   private readonly pulseSend: Tone.Gain;
+  private readonly bassBus: Tone.Gain;
+  private readonly bassLimiter: Tone.Limiter;
+  private readonly bassSend: Tone.Gain;
   private readonly foundationBus: Tone.Gain;
   private readonly masterBus: Tone.Gain;
   private readonly intensityGain: Tone.Gain;
@@ -112,6 +115,16 @@ export class AudioEngine {
    * swell compose instead of clobbering each other frame by frame.
    */
   private baseBusGains: LayerPresence = { pad: 0.7, melody: 0.62, air: 0.35, sub: 0.42, pulse: 0.8 };
+  /**
+   * The bass bus as the knobs alone would set it.
+   *
+   * Not part of `baseBusGains`, because that mirrors the five layers the
+   * foreground rotation walks between and a club bassline is not one of them:
+   * a bassline that receded on a rotation would take the floor out from under
+   * the piece. It still passes through `applyBusGains` so the play-mode duck
+   * composes with it like everything else.
+   */
+  private baseBassGain = 0.5;
   private layerPresence: LayerPresence = { ...NEUTRAL_PRESENCE };
 
   constructor() {
@@ -148,7 +161,12 @@ export class AudioEngine {
     // just the low notes going gritty. 30Hz sits below the deepest thing here
     // that is meant to be heard (36Hz), so it takes only what nothing was
     // going to reproduce.
-    this.rumble = new Tone.Filter(30, 'highpass', -24);
+    // Steep on purpose. At -24 a filter set here is still only about 5dB
+    // down an octave below itself, which leaves most of a kick's sub-audible
+    // skirt in the mix — and a four-on-the-floor kick puts four of those in
+    // every bar. At -48 the cutoff barely touches the 37Hz root the kick and
+    // the deep sub actually sit on, and everything under 25Hz is gone.
+    this.rumble = new Tone.Filter(30, 'highpass', -48);
     this.limiter = new Tone.Limiter(-2);
     this.analyser = new Tone.Analyser('fft', 512);
 
@@ -200,6 +218,20 @@ export class AudioEngine {
     this.pulseBus.connect(this.pulseSend);
     this.pulseSend.connect(this.reverb);
 
+    // The club bassline. Its own path for the same reason the sub and the
+    // beat have theirs: a 14s reverb and a compressor that lets the whole mix
+    // move with it are exactly wrong for a bassline, which has to stay dry,
+    // tight and in one place while everything else swims. A small send keeps
+    // it in the same room as the rest, and it skips the 90Hz highpass because
+    // its fundamental lives under it.
+    this.bassBus = new Tone.Gain(0.5);
+    this.bassLimiter = new Tone.Limiter(-8);
+    this.bassBus.connect(this.bassLimiter);
+    this.bassLimiter.connect(this.tiltEQ);
+    this.bassSend = new Tone.Gain(0.09);
+    this.bassBus.connect(this.bassSend);
+    this.bassSend.connect(this.reverb);
+
     // The instrument you play. It joins the chain *after* the room wall and
     // the glue compressor and outside the intensity gain, so it shares the
     // room's delay, reverb, width and tilt — it sounds like it is in the same
@@ -247,6 +279,7 @@ export class AudioEngine {
       this.subBus,
       this.foundationBus,
       this.pulseBus,
+      this.bassBus,
     );
 
     const fx: ConductorFx = {
@@ -608,6 +641,10 @@ export class AudioEngine {
     };
     this.applyBusGains(ramp);
 
+    // Mostly the Pulse knob — the bassline belongs to the groove — with the
+    // Sub knob leaning on how much of it is weight rather than line.
+    this.baseBassGain = 0.3 + s.pulse * 0.36 + s.foundation * 0.18;
+
     this.foundationBus.gain.rampTo(Math.min(1.25, 0.3 + s.foundation * 1.4), ramp);
   }
 
@@ -641,6 +678,9 @@ export class AudioEngine {
     this.airBus.gain.rampTo(base.air * p.air * d.air, rampSec);
     this.subBus.gain.rampTo(base.sub * p.sub * d.sub, rampSec);
     this.pulseBus.gain.rampTo(base.pulse * p.pulse * d.pulse, rampSec);
+    // Ducks with the sub rather than the melody: a played chord and a
+    // bassline two octaves under it are not competing for the same air.
+    this.bassBus.gain.rampTo(this.baseBassGain * d.sub, rampSec);
   }
 
   /** Knob-derived delay feedback — gesture restores must re-read this

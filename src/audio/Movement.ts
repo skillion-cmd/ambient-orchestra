@@ -2,8 +2,10 @@ import type {
   MovementCharacter,
   MovementPhase,
   MovementScale,
+  NightGroove,
   PulseProfile,
 } from './types';
+import { NIGHT_GROOVES } from './types';
 import {
   generatePhrase,
   melodyDurationBeats,
@@ -235,6 +237,27 @@ export function pickMovementCharacter(
 }
 
 /**
+ * Which night a night piece turns out to be.
+ *
+ * No two in a row: arriving at house after house is a longer set, not a
+ * change of room. Tempo leans it — the knob at the top wants the harder,
+ * faster end, and at the bottom the 2-step's lurch reads better than a
+ * four-four that has been slowed until it trudges.
+ */
+export function pickNightGroove(
+  previous: NightGroove,
+  pulseKnob: number,
+): NightGroove {
+  const weights: Record<NightGroove, number> = {
+    'two-step': 0.9 + (1 - pulseKnob) * 0.5,
+    house: 1.0,
+    techno: 0.75 + pulseKnob * 0.7,
+  };
+  const pool = NIGHT_GROOVES.filter((g) => g !== previous);
+  return weightedDraw(pool, (g) => weights[g]);
+}
+
+/**
  * A beat is common but never the default: at rest about a third of
  * movements carry none, a quarter take the felt-not-heard heartbeat, and
  * the rest get a full kit. Tempo steers it hard — from a kit on a fifth of
@@ -248,7 +271,7 @@ export function pickPulseProfile(
   activityKnob: number,
   character: MovementCharacter = 'open',
 ): PulseProfile {
-  // A night piece is the 2-step. There is no silent version of one.
+  // A night piece is its groove. There is no silent version of one.
   if (character === 'night') return 'kit';
   const kitAllowed = scale !== 'fragment';
   const weights: Record<PulseProfile, number> = {
@@ -287,6 +310,15 @@ export function readCharacterOverride(): MovementCharacter | null {
   return readOverride('character', MOVEMENT_CHARACTERS);
 }
 
+/**
+ * Dev-only groove override — `?groove=house`. Composes with
+ * `?character=night`, and implies it: asking for a groove is asking for the
+ * night it belongs to.
+ */
+export function readGrooveOverride(): NightGroove | null {
+  return readOverride('groove', NIGHT_GROOVES);
+}
+
 const PULSE_PROFILES: PulseProfile[] = ['silent', 'felt', 'kit'];
 export const MOVEMENT_CHARACTERS: MovementCharacter[] = ['open', 'night'];
 
@@ -311,6 +343,7 @@ export class Movement {
     readonly scale: MovementScale = 'standard',
     readonly pulseProfile: PulseProfile = 'silent',
     readonly character: MovementCharacter = 'open',
+    readonly nightGroove: NightGroove = 'two-step',
   ) {
     this.index = index;
     this.timeline = buildTimeline(variant, scale);

@@ -31,6 +31,32 @@ export type PulseProfile = 'silent' | 'felt' | 'kit';
  */
 export type MovementCharacter = 'open' | 'night';
 
+/**
+ * Which night this is.
+ *
+ * Night started as one thing — the 2-step, drums at garage tempo with
+ * everything harmonic hanging at half time behind them. It is three now,
+ * because the ambient engine turned out to be a good room for a club and
+ * only ever knew one groove to put in it.
+ *
+ * `two-step` — the original. The kick lands on the one and then skips the
+ * third beat entirely, so the bar lurches rather than marches.
+ * `house` — Chicago. Four on the floor, swung sixteenths, the open hat on
+ * every offbeat, claps on 2 and 4, and a bassline that plays in the gaps
+ * the kick leaves. Warm and human; the swing is the whole point.
+ * `techno` — Detroit. Four on the floor held dead straight, faster and
+ * harder, hats in relentless sixteenths, and a bass that drives rather than
+ * bounces. Machine music that aches.
+ */
+export type NightGroove = 'two-step' | 'house' | 'techno';
+
+export const NIGHT_GROOVES: NightGroove[] = ['two-step', 'house', 'techno'];
+
+/** True for the grooves built on a four-on-the-floor kick. */
+export function isFourFour(groove: NightGroove): boolean {
+  return groove === 'house' || groove === 'techno';
+}
+
 export type ChordFunction = 'tonic' | 'subdominant' | 'dominant' | 'color';
 
 export type MelodyPhraseType = 'hook' | 'answer' | 'ladder' | 'drift' | 'recall';
@@ -52,7 +78,7 @@ export const VOICE_GROUPS: Record<VoiceGroup, readonly string[]> = {
   air: ['airTexture', 'roomTone', 'fieldRecording'],
   foundation: ['subDrone', 'deepPressure'],
   flurry: ['melodicFlurry', 'sparkRun'],
-  pulse: ['rhythmicPulse', 'pulseKit'],
+  pulse: ['rhythmicPulse', 'pulseKit', 'clubBass', 'clubStab'],
   clips: ['hymnClip', 'arpClip', 'phraseClip', 'textureClip', 'washClip'],
 };
 
@@ -107,8 +133,10 @@ export interface HarmonicContext {
   movementElapsedSec: number;
   /** Whether this movement carries a beat, and how much of one */
   pulseProfile: PulseProfile;
-  /** The world this movement lives in — daylit, or a 2-step night piece */
+  /** The world this movement lives in — daylit, or one of the night grooves */
   character: MovementCharacter;
+  /** Which night. Only meaningful while `character` is 'night'. */
+  nightGroove: NightGroove;
   /**
    * Multiplier on beat-relative durations for everything melodic. At garage
    * tempo the transport runs 2.4x faster than this engine's resting pulse;

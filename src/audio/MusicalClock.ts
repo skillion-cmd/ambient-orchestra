@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import type { MovementCharacter, MovementPhase, SoundKnobs } from './types';
+import type { MovementCharacter, MovementPhase, NightGroove, SoundKnobs } from './types';
 
 /** The fastest the transport ever runs — 2-step tempo. */
 export const MAX_BPM = 140;
@@ -8,25 +8,43 @@ export const MAX_BPM = 140;
 export const RESTING_BPM = 58;
 
 /**
+ * Where each night groove sits, and how far the knob moves it.
+ *
+ * Every one of these is a narrow band that the Tempo knob nudges within
+ * rather than a range it sweeps. A groove is a tempo as much as it is a
+ * pattern: house slowed to 100 is not slow house, and 2-step at 120 is not
+ * 2-step. Chicago ran a little under where garage sits, Detroit a little
+ * over, and the 2-step keeps the band it always had.
+ */
+const GROOVE_TEMPO: Record<NightGroove, { base: number; span: number }> = {
+  'two-step': { base: 128, span: 10 },
+  house: { base: 120, span: 7 },
+  techno: { base: 130, span: 10 },
+};
+
+/**
  * Target BPM for a phase. Steady (Calibrate) mode trades the wide per-phase
  * sway for a wider Tempo-knob range, so the knob reads as a direct lever —
- * and that lever now reaches all the way to garage tempo.
+ * and that lever now reaches all the way to club tempo.
  *
- * A night piece ignores the drift-mode resting range entirely and sits at
- * 128–140 whatever the knob is doing, because the 2-step shuffle only reads
- * as itself up there.
+ * A night piece ignores the drift-mode resting range entirely and sits in
+ * its groove's band whatever the knob is doing.
  */
 export function bpmFor(
   phase: MovementPhase,
   pulse: number,
   steady: boolean,
   character: MovementCharacter = 'open',
+  groove: NightGroove = 'two-step',
 ): number {
   if (character === 'night') {
-    // Narrow band, knob nudges within it, phases barely sway it: the point
-    // of a garage tempo is that it holds.
-    const night = 128 + pulse * 10 + (phase === 'bloom' ? 2 : phase === 'exhale' ? -3 : 0);
-    return Math.min(MAX_BPM, night);
+    // The phase sway is tiny and it is not decoration: a club track that
+    // pushes two BPM into its peak and eases off at the end is doing what a
+    // DJ does, and holding a tempo dead flat for ten minutes is the one way
+    // to make a groove feel like a loop rather than a set.
+    const { base, span } = GROOVE_TEMPO[groove];
+    const sway = phase === 'bloom' ? 2 : phase === 'exhale' ? -3 : 0;
+    return Math.min(MAX_BPM, base + pulse * span + sway);
   }
   const base = steady ? 46 + pulse * (MAX_BPM - 46) : 52 + pulse * 20;
   const sway = steady ? 0.25 : 1;
@@ -96,12 +114,13 @@ export class MusicalClock {
     phase: MovementPhase,
     knobs: SoundKnobs,
     character: MovementCharacter = 'open',
+    groove: NightGroove = 'two-step',
   ): void {
     if (!this.follow) {
       const pulseKnob = knobs.pulse ?? 0.5;
       const targetBpm = Math.min(
         MAX_BPM,
-        bpmFor(phase, pulseKnob, this.steadyTempo, character),
+        bpmFor(phase, pulseKnob, this.steadyTempo, character, groove),
       );
       if (Math.abs(targetBpm - this.lastTargetBpm) > 0.25) {
         Tone.getTransport().bpm.rampTo(targetBpm, 2);

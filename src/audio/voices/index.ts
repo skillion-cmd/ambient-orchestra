@@ -1,7 +1,7 @@
 import * as Tone from 'tone';
 import { createClipVoices } from '../clips';
 import { isMelodyAccent } from '../HarmonicField';
-import type { HarmonicContext, SoundKnobs } from '../types';
+import type { HarmonicContext, NightGroove, SoundKnobs } from '../types';
 import { euclidean, euclideanHit } from '../Euclidean';
 import { fitToStep, ScheduleTime } from '../ScheduleTime';
 import { VoiceBase } from '../VoiceBase';
@@ -853,8 +853,29 @@ export class MelodicFlurry extends VoiceBase {
   }
 }
 
-/** Widest a night nudge can move a hit, either way. */
+/** Which drums are built and how they are voiced. */
+type KitStyle = 'open' | NightGroove;
+
+function isFourFourStyle(style: KitStyle): boolean {
+  return style === 'house' || style === 'techno';
+}
+
+const EMPTY_PATTERN: boolean[] = new Array(16).fill(false);
+
+function pickOne<T>(options: T[]): T {
+  return options[Math.floor(Math.random() * options.length)]!;
+}
+
+/** Widest a 2-step nudge can move a hit, either way. */
 const NUDGE_SPAN_SEC = 0.03;
+/**
+ * The same for house, and much smaller.
+ *
+ * Chicago's feel comes from the shuffle, not from wobble. A drum machine
+ * nudged by thirty milliseconds sounds like someone who cannot play; nudged
+ * by four it sounds like a machine somebody loved.
+ */
+const HOUSE_NUDGE_SPAN_SEC = 0.008;
 /** The same for the open kit's per-hit jitter. */
 const JITTER_SPAN_SEC = 0.016;
 
@@ -1069,9 +1090,9 @@ function stepsToPattern(steps: number[], length = 16): boolean[] {
  * feel handmade instead of merely loose: random jitter per hit just sounds
  * sloppy, whereas a stable offset becomes part of the pattern.
  */
-function fixedNudges(length = 16): number[] {
+function fixedNudges(length = 16, span = NUDGE_SPAN_SEC): number[] {
   const out: number[] = [];
-  for (let i = 0; i < length; i++) out.push((Math.random() - 0.45) * NUDGE_SPAN_SEC);
+  for (let i = 0; i < length; i++) out.push((Math.random() - 0.45) * span);
   return out;
 }
 
@@ -1083,13 +1104,22 @@ function fixedNudges(length = 16): number[] {
  */
 export class PulseKit extends VoiceBase {
   private kick: Tone.MembraneSynth | null = null;
-  private shaker: Tone.NoiseSynth | null = null;
-  private shakerFilter: Tone.Filter | null = null;
+  /** Closed hi-hat on a four-four kit; the shaker on an open one. */
+  private hat: Tone.NoiseSynth | null = null;
+  private hatFilter: Tone.Filter | null = null;
+  /** The offbeat open hat — the sound four-on-the-floor is built around. */
+  private openHat: Tone.NoiseSynth | null = null;
+  private openHatFilter: Tone.Filter | null = null;
   private click: Tone.MembraneSynth | null = null;
   private clickFilter: Tone.Filter | null = null;
   /** Night's backbeat: a short noise burst, where open uses a woody click. */
   private snare: Tone.NoiseSynth | null = null;
   private snareFilter: Tone.Filter | null = null;
+  /** The hands, and the room they are in — see `fireClap`. */
+  private clap: Tone.NoiseSynth | null = null;
+  private clapFilter: Tone.Filter | null = null;
+  private clapTail: Tone.NoiseSynth | null = null;
+  private clapTailFilter: Tone.Filter | null = null;
   private loop: Tone.Loop | null = null;
   /**
    * One clock per drum, not one for the kit.
@@ -1099,18 +1129,27 @@ export class PulseKit extends VoiceBase {
    * for no reason. Each drum only has to stay ordered against itself.
    */
   private readonly kickTime = new ScheduleTime();
-  private readonly shakerTime = new ScheduleTime();
+  private readonly hatTime = new ScheduleTime();
+  private readonly openHatTime = new ScheduleTime();
   private readonly clickTime = new ScheduleTime();
   private readonly snareTime = new ScheduleTime();
+  private readonly clapTime = new ScheduleTime();
+  private readonly clapTailTime = new ScheduleTime();
 
   private kickPattern: boolean[] = [];
-  private shakerPattern: boolean[] = [];
+  private hatPattern: boolean[] = [];
+  private openHatPattern: boolean[] = [];
+  private clapPattern: boolean[] = [];
   private clickPattern: boolean[] = [];
   private step = 0;
   private bars = 0;
   private swing = 0.4;
   /** Fixed per-step offsets on a night pattern; null means grid + jitter. */
   private nudges: number[] | null = null;
+  /** Which kit is currently built — the voicings differ, not just the parts. */
+  private builtStyle: KitStyle = 'open';
+  /** True while the open hat is ringing and the next hat should choke it. */
+  private openHatRinging = false;
 
   constructor(dest: Bus) {
     super('pulseKit', dest, 0.5);
@@ -1119,22 +1158,80 @@ export class PulseKit extends VoiceBase {
 
   onEnter(): void {
     this.clearPendingDispose();
+    this.buildKit(this.style());
+    this.step = 0;
+    this.bars = 0;
+    this.rollPatterns();
+    this.loop = new Tone.Loop((time) => this.tick(time), '16n').start('+0.1');
+  }
+
+  /**
+   * Which kit this is.
+   *
+   * Read from the harmonic context rather than stored at entry, because the
+   * kit outlives a movement: it is night-core, so the trimmer leaves it
+   * alone, and a piece can hand over to one in a different world underneath
+   * it. `onUpdate` watches for that and rebuilds.
+   */
+  private style(): KitStyle {
+    const ctx = this.harmonicContext;
+    if (!ctx || ctx.character !== 'night') return 'open';
+    return ctx.nightGroove;
+  }
+
+  /**
+   * Build the drums for one style.
+   *
+   * The parts differ between these kits, but so do the voicings, and the
+   * voicings are most of it. A house kick and a 2-step kick are not the same
+   * drum playing a different pattern: one is a round punch with a tail you
+   * can lean on, the other a thud placed just so. Detroit's is longer and
+   * harder again, because at 130 with nothing swinging, the kick is carrying
+   * the whole record.
+   */
+  private buildKit(style: KitStyle): void {
+    const kickSpec = {
+      open: { pitchDecay: 0.05, decay: 0.24, release: 0.12 },
+      'two-step': { pitchDecay: 0.05, decay: 0.24, release: 0.12 },
+      house: { pitchDecay: 0.032, decay: 0.34, release: 0.16 },
+      techno: { pitchDecay: 0.026, decay: 0.42, release: 0.2 },
+    }[style];
 
     // `octaves` is 2, not 3, because the kick's fundamental moved up an
     // octave (see `tick`). The beater sweep still starts in the same place it
     // always did — 4x a 37-58Hz root is the 147-233Hz it used to reach from
     // 8x an 18-29Hz one — so the attack is unchanged and only the body moved.
     this.kick = new Tone.MembraneSynth({
-      pitchDecay: 0.05,
+      pitchDecay: kickSpec.pitchDecay,
       octaves: 2,
-      envelope: { attack: 0.001, decay: 0.24, sustain: 0, release: 0.12 },
+      envelope: { attack: 0.001, decay: kickSpec.decay, sustain: 0, release: kickSpec.release },
     }).connect(this.output);
 
-    this.shakerFilter = new Tone.Filter(5200, 'highpass', -24).connect(this.output);
-    this.shaker = new Tone.NoiseSynth({
-      noise: { type: 'pink' },
-      envelope: { attack: 0.001, decay: 0.035, sustain: 0 },
-    }).connect(this.shakerFilter);
+    const fourFour = style === 'house' || style === 'techno';
+
+    // A closed hat is brighter and shorter than the shaker it replaces; a
+    // techno hat is shorter still, because at sixteenths anything with a tail
+    // smears into a hiss.
+    this.hatFilter = new Tone.Filter(fourFour ? 7000 : 5200, 'highpass', -24).connect(
+      this.output,
+    );
+    this.hat = new Tone.NoiseSynth({
+      noise: { type: fourFour ? 'white' : 'pink' },
+      envelope: {
+        attack: 0.001,
+        decay: style === 'techno' ? 0.024 : fourFour ? 0.032 : 0.035,
+        sustain: 0,
+      },
+    }).connect(this.hatFilter);
+
+    // The open hat is the one drum here with a sustain, and it needs one: it
+    // rings until the next hat closes it, which is a hi-hat pedal and not a
+    // decay envelope. See the choke in `tick`.
+    this.openHatFilter = new Tone.Filter(6400, 'highpass', -24).connect(this.output);
+    this.openHat = new Tone.NoiseSynth({
+      noise: { type: 'white' },
+      envelope: { attack: 0.001, decay: 0.16, sustain: 0.3, release: 0.14 },
+    }).connect(this.openHatFilter);
 
     this.clickFilter = new Tone.Filter(900, 'bandpass', -12).connect(this.output);
     this.click = new Tone.MembraneSynth({
@@ -1149,24 +1246,84 @@ export class PulseKit extends VoiceBase {
       envelope: { attack: 0.001, decay: 0.13, sustain: 0 },
     }).connect(this.snareFilter);
 
-    this.step = 0;
-    this.bars = 0;
-    this.rollPatterns();
-    this.loop = new Tone.Loop((time) => this.tick(time), '16n').start('+0.1');
+    // Two nodes, because a clap is two things: the hands, which are several
+    // short bursts a few milliseconds apart, and the room they are in, which
+    // is one longer one underneath. Build it from a single burst and you get
+    // a snare.
+    this.clapFilter = new Tone.Filter(1500, 'bandpass', -12).connect(this.output);
+    this.clapFilter.Q.value = 1.1;
+    this.clap = new Tone.NoiseSynth({
+      noise: { type: 'white' },
+      envelope: { attack: 0.001, decay: 0.03, sustain: 0 },
+    }).connect(this.clapFilter);
+
+    this.clapTailFilter = new Tone.Filter(1150, 'bandpass', -12).connect(this.output);
+    this.clapTail = new Tone.NoiseSynth({
+      noise: { type: 'white' },
+      envelope: { attack: 0.003, decay: style === 'house' ? 0.21 : 0.15, sustain: 0 },
+    }).connect(this.clapTailFilter);
+
+    this.builtStyle = style;
+    this.openHatRinging = false;
   }
 
-  /** Fresh euclidean spreads, re-rolled every eight bars so it evolves. */
+  private teardownKit(): void {
+    this.scheduleDispose(
+      [
+        this.kick,
+        this.hat,
+        this.hatFilter,
+        this.openHat,
+        this.openHatFilter,
+        this.click,
+        this.clickFilter,
+        this.snare,
+        this.snareFilter,
+        this.clap,
+        this.clapFilter,
+        this.clapTail,
+        this.clapTailFilter,
+      ],
+      0.5,
+    );
+    this.kick = null;
+    this.hat = null;
+    this.hatFilter = null;
+    this.openHat = null;
+    this.openHatFilter = null;
+    this.click = null;
+    this.clickFilter = null;
+    this.snare = null;
+    this.snareFilter = null;
+    this.clap = null;
+    this.clapFilter = null;
+    this.clapTail = null;
+    this.clapTailFilter = null;
+  }
+
+  /** Fresh spreads, re-rolled every eight bars so it evolves. */
   private rollPatterns(): void {
-    if (this.harmonicContext?.character === 'night') {
-      this.rollTwoStep();
-      return;
+    switch (this.style()) {
+      case 'house':
+        return this.rollHouse();
+      case 'techno':
+        return this.rollTechno();
+      case 'two-step':
+        return this.rollTwoStep();
+      default:
+        return this.rollOpen();
     }
+  }
+
+  private rollOpen(): void {
     const kickPulses = 3 + Math.floor(Math.random() * 3); // 3–5
-    const shakerPulses = 7 + Math.floor(Math.random() * 5); // 7–11
+    const hatPulses = 7 + Math.floor(Math.random() * 5); // 7–11
     const clickPulses = 2 + Math.floor(Math.random() * 2); // 2–3
     this.kickPattern = euclidean(kickPulses, 16, Math.floor(Math.random() * 4));
-    this.shakerPattern = euclidean(shakerPulses, 16, Math.floor(Math.random() * 16));
+    this.hatPattern = euclidean(hatPulses, 16, Math.floor(Math.random() * 16));
     this.clickPattern = euclidean(clickPulses, 16, 3 + Math.floor(Math.random() * 10));
+    this.openHatPattern = EMPTY_PATTERN;
+    this.clapPattern = EMPTY_PATTERN;
     this.swing = 0.25 + Math.random() * 0.4;
     this.nudges = null;
   }
@@ -1194,22 +1351,100 @@ export class PulseKit extends VoiceBase {
     ];
     const GHOSTS = [[7, 15], [11], [3, 13], [7]];
 
-    this.kickPattern = stepsToPattern(KICKS[Math.floor(Math.random() * KICKS.length)]!);
-    this.shakerPattern = stepsToPattern(HATS[Math.floor(Math.random() * HATS.length)]!);
-    this.clickPattern = stepsToPattern([
-      4,
-      12,
-      ...GHOSTS[Math.floor(Math.random() * GHOSTS.length)]!,
-    ]);
+    this.kickPattern = stepsToPattern(pickOne(KICKS));
+    this.hatPattern = stepsToPattern(pickOne(HATS));
+    // Garage has an open hat too, but sparingly — one a bar, in a gap.
+    this.openHatPattern =
+      Math.random() < 0.55 ? stepsToPattern([pickOne([6, 11, 14])]) : EMPTY_PATTERN;
+    this.clapPattern = EMPTY_PATTERN;
+    this.clickPattern = stepsToPattern([4, 12, ...pickOne(GHOSTS)]);
     this.swing = 0.55 + Math.random() * 0.3;
-    this.nudges = fixedNudges();
+    this.nudges = fixedNudges(16, NUDGE_SPAN_SEC);
+  }
+
+  /**
+   * Chicago. Four on the floor, and the kick does not move — every bar, every
+   * eight bars, every time. That is not a lack of invention: the whole style
+   * is built on a floor that never shifts so everything above it can, and a
+   * four-four that occasionally skips a beat is not four-four, it is a
+   * mistake.
+   *
+   * What moves is the offbeat. The open hat on the "and" of every beat is the
+   * sound — the kick pushes, the hat answers, and between them they walk. The
+   * clap lands on 2 and 4 and sometimes doubles a sixteenth late, which is
+   * two people clapping rather than a machine.
+   *
+   * And it shuffles. The swung sixteenth is the whole difference between
+   * Chicago and a drum machine left on its factory setting, and it is why
+   * this is the one groove here that gets a heavy swing and a little
+   * humanising on top.
+   */
+  private rollHouse(): void {
+    this.kickPattern = stepsToPattern([0, 4, 8, 12]);
+    this.openHatPattern = stepsToPattern(
+      pickOne([
+        [2, 6, 10, 14],
+        [2, 6, 10, 14],
+        [2, 6, 14],
+        [2, 10, 14],
+      ]),
+    );
+    this.hatPattern = stepsToPattern(
+      pickOne([
+        [0, 1, 3, 4, 5, 7, 8, 9, 11, 12, 13, 15],
+        [1, 3, 5, 7, 9, 11, 13, 15],
+        [0, 1, 3, 5, 7, 8, 9, 11, 13, 15],
+      ]),
+    );
+    this.clapPattern = stepsToPattern(Math.random() < 0.25 ? [4, 12, 13] : [4, 12]);
+    this.clickPattern = stepsToPattern(pickOne([[7], [3, 11], [15], [7, 15], []]));
+    this.swing = 0.72 + Math.random() * 0.36;
+    this.nudges = fixedNudges(16, HOUSE_NUDGE_SPAN_SEC);
+  }
+
+  /**
+   * Detroit. The same floor, held dead straight.
+   *
+   * Everything Chicago does with shuffle and hands, this does with
+   * relentlessness: sixteenths that do not let up, a clap that sometimes
+   * comes only on the 4 so the bar leans forward into it, and rim hits
+   * syncopated against a grid that never gives. It gets no swing and no
+   * humanising at all — an explicit array of zeroes rather than the open
+   * kit's random jitter, because the machine being exactly a machine is the
+   * feeling, and eight milliseconds of wobble is enough to lose it.
+   */
+  private rollTechno(): void {
+    this.kickPattern = stepsToPattern([0, 4, 8, 12]);
+    this.openHatPattern = stepsToPattern(
+      pickOne([
+        [2, 6, 10, 14],
+        [6, 14],
+        [2, 6, 10, 14],
+        [10, 14],
+      ]),
+    );
+    this.hatPattern =
+      Math.random() < 0.55
+        ? stepsToPattern([...Array(16).keys()])
+        : stepsToPattern([0, 2, 4, 6, 8, 10, 12, 14]);
+    this.clapPattern = stepsToPattern(Math.random() < 0.4 ? [12] : [4, 12]);
+    this.clickPattern = stepsToPattern(
+      pickOne([
+        [3, 11],
+        [7, 13],
+        [3, 7, 11, 15],
+        [5, 13],
+      ]),
+    );
+    this.swing = Math.random() * 0.12;
+    this.nudges = new Array(16).fill(0);
   }
 
   private tick(time: number): void {
     // The transport can hand this callback out after the kit has left and
     // torn its drums down. Nothing out here catches a throw, and it would
     // take the rest of the transport's tick with it.
-    if (this.kick?.disposed) return;
+    if (!this.kick || this.kick.disposed) return;
     const step = this.step % 16;
     if (step === 0) {
       this.bars++;
@@ -1231,53 +1466,82 @@ export class PulseKit extends VoiceBase {
     /**
      * Attack only, no release.
      *
-     * Every drum in this kit is voiced with `sustain: 0`, so its decay is the
-     * note and the release does nothing audible — `triggerAttackRelease` was
-     * scheduling a stop that had no musical job and one real consequence.
-     * The note values here are chosen without reference to how far away the
-     * next step lands, and the gap is a good deal shorter than a sixteenth:
-     * swing pushes an offbeat later while the step after it stays put, and
-     * the nudges pull hits around by up to a nudge span more. When the note
-     * outlasted the gap, a monophonic drum was asked to re-attack with its
-     * own stop still scheduled ahead of it, and Web Audio threw — out in the
-     * transport's tick, where nothing in the engine catches it and the rest
-     * of that tick's events went with it. The night snare's ghost-into-
-     * backbeat pair did it reliably. Dropping the release removes the whole
-     * class of collision rather than trying to stay ahead of it, and clamping
-     * a duration would not have been enough anyway: the gap is computed from
-     * the tempo at the time of the hit, and the tempo keeps moving.
+     * Every drum here but the open hat is voiced with `sustain: 0`, so its
+     * decay is the note and a release does nothing audible — scheduling one
+     * had no musical job and one real consequence. The note values were
+     * chosen without reference to how far away the next step lands, and the
+     * gap is a good deal shorter than a sixteenth: swing pushes an offbeat
+     * later while the step after it stays put, and the nudges pull hits
+     * around by up to a nudge span more. When the note outlasted the gap, a
+     * monophonic drum was asked to re-attack with its own stop still
+     * scheduled ahead of it, and Web Audio threw — out in the transport's
+     * tick, where nothing in the engine catches it and the rest of that
+     * tick's events went with it.
      */
 
+    const style = this.style();
+    const fourFour = isFourFourStyle(style);
+    const night = style !== 'open';
     const rootMidi = this.harmonicContext?.rootMidi ?? 45;
-    const night = this.harmonicContext?.character === 'night';
 
-    if (euclideanHit(this.kickPattern, step, night ? 0.99 : 0.94)) {
-      // One octave under the root, not two.
-      //
-      // At two the fundamental landed at 18-29Hz, which is under or barely at
-      // the bottom of hearing: no speaker outside a cinema reproduces it, so
-      // it arrived as cone excursion rather than as a note — the low end going
-      // muddy and buzzy on the pieces that draw a kit, worst on the small
-      // speakers most likely to be listening. It also spent real headroom on
-      // something nobody could hear, and measured only ~3.5dB under the whole
-      // audible bass band while doing it. An octave up is 37-58Hz: the same
-      // range the deep-pressure sub already works in, and a kick you can
-      // actually hear land.
-      const pitch = Tone.Frequency(rootMidi - 12, 'midi').toFrequency();
-      // A 2-step kick is a thud placed just so, not a punch: softer and
-      // more even than the open kit's, because the pattern carries it.
-      const vel = night ? 0.6 + Math.random() * 0.08 : 0.72 + Math.random() * 0.16;
-      this.kick?.triggerAttack(pitch, this.kickTime.atLeast(at), vel);
+    // One octave under the root, not two. At two the fundamental landed at
+    // 18-29Hz, under or barely at the bottom of hearing: no speaker outside
+    // a cinema reproduces it, so it arrived as cone excursion rather than as
+    // a note. An octave up is 37-58Hz — the range the deep-pressure sub
+    // already works in, and a kick you can actually hear land.
+    const kickPitch = Tone.Frequency(rootMidi - 12, 'midi').toFrequency();
+
+    // A four-four kick never drops a beat. The probability that thins the
+    // other kits would turn the floor into a stumble.
+    if (euclideanHit(this.kickPattern, step, fourFour ? 1 : night ? 0.99 : 0.94)) {
+      const vel = fourFour
+        ? (style === 'techno' ? 0.82 : 0.78) + Math.random() * 0.07
+        : // A 2-step kick is a thud placed just so, not a punch: softer and
+          // more even than the open kit's, because the pattern carries it.
+          night
+          ? 0.6 + Math.random() * 0.08
+          : 0.72 + Math.random() * 0.16;
+      this.kick.triggerAttack(kickPitch, this.kickTime.atLeast(at), vel);
     }
 
-    if (euclideanHit(this.shakerPattern, step, night ? 0.92 : 0.8)) {
-      // Accent the downbeat-adjacent steps; the rest stay ghosted.
-      const accent = step % 4 === 0 ? 0.28 : 0.1 + Math.random() * 0.12;
-      this.shaker?.triggerAttack(this.shakerTime.atLeast(at), accent);
+    const openHit = this.openHatPattern[step] === true;
+    const hatHit =
+      !openHit && euclideanHit(this.hatPattern, step, fourFour ? 0.97 : night ? 0.92 : 0.8);
+
+    // Any hat closes the open one, because they are the same physical hi-hat.
+    // That choke is the difference between an offbeat open hat and a wash of
+    // noise sitting over the bar, and it is most of why four-on-the-floor
+    // breathes instead of droning.
+    if ((openHit || hatHit) && this.openHatRinging) {
+      this.openHat?.triggerRelease(this.openHatTime.atLeast(at));
+      this.openHatRinging = false;
     }
+
+    if (openHit) {
+      this.openHat?.triggerAttack(
+        this.openHatTime.atLeast(at),
+        0.2 + Math.random() * 0.06,
+      );
+      this.openHatRinging = true;
+    } else if (hatHit) {
+      // House accents the offbeat under its open hats; techno accents the
+      // downbeat, which is what makes the same sixteenths read as driving
+      // rather than as shuffling.
+      const onGrid = step % 4 === 0;
+      const accent = fourFour
+        ? (style === 'techno' ? onGrid : !onGrid)
+          ? 0.24 + Math.random() * 0.05
+          : 0.11 + Math.random() * 0.07
+        : onGrid
+          ? 0.28
+          : 0.1 + Math.random() * 0.12;
+      this.hat?.triggerAttack(this.hatTime.atLeast(at), accent);
+    }
+
+    if (this.clapPattern[step]) this.fireClap(at, style);
 
     if (euclideanHit(this.clickPattern, step, night ? 0.97 : 0.6)) {
-      if (night) {
+      if (style === 'two-step') {
         // Backbeat on 2 and 4 holds flat against the lurching kick; the
         // off-grid extras are ghosts.
         const backbeat = step === 4 || step === 12;
@@ -1290,36 +1554,49 @@ export class PulseKit extends VoiceBase {
         this.click?.triggerAttack(
           pitch,
           this.clickTime.atLeast(at + 0.004),
-          0.18 + Math.random() * 0.1,
+          (fourFour ? 0.12 : 0.18) + Math.random() * 0.08,
         );
       }
     }
   }
 
-  onUpdate(): void {}
+  /**
+   * A clap is not one sound.
+   *
+   * It is three or four hands not quite together, and then the room they are
+   * in. The bursts are what makes it read as people; the tail underneath is
+   * what makes it read as a place. A single noise burst with a long decay —
+   * the obvious first try — is a snare, and a snare on 2 and 4 over a
+   * four-four kick is a rock beat.
+   */
+  private fireClap(at: number, style: KitStyle): void {
+    const v = (style === 'techno' ? 0.26 : 0.3) + Math.random() * 0.05;
+    const spread = style === 'techno' ? 0.008 : 0.011;
+    this.clap?.triggerAttack(this.clapTime.atLeast(at), v);
+    this.clap?.triggerAttack(this.clapTime.atLeast(at + spread), v * 0.78);
+    this.clap?.triggerAttack(this.clapTime.atLeast(at + spread * 1.9), v * 0.62);
+    this.clapTail?.triggerAttack(this.clapTailTime.atLeast(at + spread * 0.6), v * 0.55);
+  }
+
+  onUpdate(): void {
+    // The world changed underneath a kit that never left. Rebuild rather than
+    // exit: the trimmer protects this voice on a night piece precisely so the
+    // groove cannot evaporate mid-movement, and exiting to get re-activated
+    // would be the same evaporation by another route.
+    const style = this.style();
+    if (style !== this.builtStyle) {
+      this.teardownKit();
+      this.buildKit(style);
+      this.step = 0;
+      this.bars = 0;
+      this.rollPatterns();
+    }
+  }
 
   onExit(): void {
     this.loop?.stop().dispose();
     this.loop = null;
-    this.scheduleDispose(
-      [
-        this.kick,
-        this.shaker,
-        this.shakerFilter,
-        this.click,
-        this.clickFilter,
-        this.snare,
-        this.snareFilter,
-      ],
-      0.5,
-    );
-    this.kick = null;
-    this.shaker = null;
-    this.shakerFilter = null;
-    this.click = null;
-    this.clickFilter = null;
-    this.snare = null;
-    this.snareFilter = null;
+    this.teardownKit();
   }
 }
 
@@ -1416,6 +1693,352 @@ export function createRoomVoices(bus: Bus): VoiceBase[] {
   ];
 }
 
+/** One step of a bassline: which scale degree, and in which octave. */
+interface BassStep {
+  degree: number;
+  octave: number;
+}
+
+/**
+ * How far the bass is pulled down on each kick, and how long it takes to come
+ * back. Not a mixing trick bolted on afterwards — the pump *is* the genre's
+ * sense of motion, the thing that makes a loop feel like it is going
+ * somewhere. Techno ducks harder and recovers slower, so the bar breathes in
+ * longer strokes.
+ */
+const SIDECHAIN: Record<'house' | 'techno', { floor: number; recoverSec: number }> = {
+  house: { floor: 0.42, recoverSec: 0.17 },
+  techno: { floor: 0.3, recoverSec: 0.24 },
+};
+
+/**
+ * The line that plays in the gaps the kick leaves.
+ *
+ * A four-on-the-floor kit on its own is a metronome with opinions. What
+ * turns it into music is a bass that answers it — and the reason a house
+ * bassline lives on the offbeat is not decoration, it is that the kick has
+ * already taken the beat and there is nowhere else to be. Chicago's bounces
+ * between the root and the octave above and gets out of the way; Detroit's
+ * stays lower and drives, more notes and less air, because at 130 with no
+ * shuffle the bass is what is carrying the groove rather than riding it.
+ *
+ * Everything else here is scheduled to be beautiful. This is scheduled to
+ * make you move, and it is the only voice in the orchestra that knows it.
+ */
+export class ClubBass extends VoiceBase {
+  private synth: Tone.MonoSynth | null = null;
+  /** Sidechain gain — the kick ducks this, see `SIDECHAIN`. */
+  private duck: Tone.Gain | null = null;
+  private loop: Tone.Loop | null = null;
+  private pumpLoop: Tone.Loop | null = null;
+  private readonly noteTime = new ScheduleTime();
+  private pattern: (BassStep | null)[] = new Array(16).fill(null);
+  private step = 0;
+  private bars = 0;
+  private builtGroove: 'house' | 'techno' = 'house';
+
+  constructor(dest: Bus) {
+    // Measured against the kit rather than guessed: at 0.34 the line sat
+    // about 3.5dB over the kick, and in a four-four the kick is the floor —
+    // anything above it is standing on the thing it is supposed to stand on.
+    super('clubBass', dest, 0.24);
+    this.fadeSpeed = 0.02;
+  }
+
+  onEnter(ctx: HarmonicContext): void {
+    this.clearPendingDispose();
+    this.build(clubGroove(ctx));
+    this.step = 0;
+    this.bars = 0;
+    this.rollPattern();
+    this.loop = new Tone.Loop((time) => this.tick(time), '16n').start('+0.1');
+    // The pump runs on its own quarter-note loop rather than off the kit,
+    // because both are locked to the same transport and a four-four kick is
+    // on every quarter by definition. Reading it from the kit would couple
+    // two voices to say something the grid already says.
+    this.pumpLoop = new Tone.Loop((time) => this.pump(time), '4n').start('+0.1');
+  }
+
+  private build(groove: 'house' | 'techno'): void {
+    this.duck = new Tone.Gain(1).connect(this.output);
+    this.synth = new Tone.MonoSynth(
+      groove === 'house'
+        ? {
+            oscillator: { type: 'triangle' },
+            envelope: { attack: 0.004, decay: 0.18, sustain: 0.22, release: 0.12 },
+            filter: { type: 'lowpass', rolloff: -24, Q: 2.4 },
+            filterEnvelope: {
+              attack: 0.004,
+              decay: 0.13,
+              sustain: 0.12,
+              release: 0.1,
+              baseFrequency: 95,
+              octaves: 2.7,
+            },
+          }
+        : {
+            oscillator: { type: 'sawtooth' },
+            envelope: { attack: 0.005, decay: 0.22, sustain: 0.42, release: 0.14 },
+            filter: { type: 'lowpass', rolloff: -24, Q: 4.2 },
+            filterEnvelope: {
+              attack: 0.006,
+              decay: 0.19,
+              sustain: 0.2,
+              release: 0.12,
+              baseFrequency: 78,
+              octaves: 3.1,
+            },
+          },
+    ).connect(this.duck);
+    this.builtGroove = groove;
+  }
+
+  private teardown(): void {
+    this.scheduleDispose([this.synth, this.duck], 0.5);
+    this.synth = null;
+    this.duck = null;
+  }
+
+  /**
+   * The bar's worth of notes.
+   *
+   * House sits on the offbeat eighths — the "and" of every beat, which is
+   * exactly where the kick isn't — and jumps the octave on some of them,
+   * which is the whole bounce. Techno fills more of the grid and stays down
+   * there; the syncopation carries it instead of the octave.
+   */
+  private rollPattern(): void {
+    const house = this.builtGroove === 'house';
+    const steps: number[] = house
+      ? pickOne([
+          [2, 6, 10, 14],
+          [2, 6, 10, 14],
+          [2, 6, 10, 13, 14],
+          [2, 3, 6, 10, 14],
+        ])
+      : pickOne([
+          [0, 3, 6, 8, 11, 14],
+          [0, 6, 8, 11, 14],
+          [0, 2, 3, 6, 8, 10, 11, 14],
+          [0, 3, 8, 11],
+        ]);
+
+    // Which degrees the line walks. The root does most of the work — a
+    // bassline that keeps moving harmonically stops being a floor — with the
+    // fifth and the flat seventh as the places it goes and comes back from.
+    const colour = pickOne([
+      [0, 0, 0, 4],
+      [0, 0, 4, 0],
+      [0, 0, 0, 6],
+      [0, 4, 0, 2],
+    ]);
+
+    this.pattern = new Array(16).fill(null);
+    steps.forEach((st, i) => {
+      const degree = colour[i % colour.length]!;
+      // House jumps up for the answer; techno stays under the floor.
+      const octave = house ? (i % 2 === 1 && Math.random() < 0.6 ? 1 : 0) : Math.random() < 0.3 ? -1 : 0;
+      this.pattern[st] = { degree, octave };
+    });
+  }
+
+  /** How many sixteenths until this line next speaks — a note must not outlast it. */
+  private stepsUntilNext(from: number): number {
+    for (let i = 1; i <= 16; i++) {
+      if (this.pattern[(from + i) % 16]) return i;
+    }
+    return 16;
+  }
+
+  private tick(time: number): void {
+    if (!this.synth || this.synth.disposed || !this.harmonicContext) return;
+    const step = this.step % 16;
+    if (step === 0) {
+      this.bars++;
+      if (this.bars % 4 === 0) this.rollPattern();
+    }
+    this.step++;
+
+    const hit = this.pattern[step];
+    if (!hit) return;
+
+    const sixteenth = Tone.Time('16n').toSeconds();
+    const note = this.noteAt(this.harmonicContext, hit.degree, hit.octave);
+    // A mono synth re-attacked while it is still releasing steals its own
+    // note. Fitting the length to the gap keeps every note short of the next.
+    const dur = fitToStep(
+      sixteenth * this.stepsUntilNext(step) * (this.builtGroove === 'house' ? 0.8 : 1),
+      sixteenth * this.stepsUntilNext(step),
+    );
+    const vel = 0.62 + Math.random() * 0.12;
+    this.synth.triggerAttackRelease(note, dur, this.noteTime.atLeast(time), vel);
+  }
+
+  /** Duck on the beat, recover before the next one. */
+  private pump(time: number): void {
+    const duck = this.duck;
+    if (!duck || duck.disposed) return;
+    const { floor, recoverSec } = SIDECHAIN[this.builtGroove];
+    const g = duck.gain;
+    g.cancelScheduledValues(time);
+    g.setValueAtTime(floor, time);
+    g.linearRampToValueAtTime(1, time + recoverSec);
+  }
+
+  onHarmonicShift(): void {
+    this.rollPattern();
+  }
+
+  onUpdate(): void {
+    const groove = this.harmonicContext ? clubGroove(this.harmonicContext) : this.builtGroove;
+    if (groove !== this.builtGroove) {
+      this.teardown();
+      this.build(groove);
+      this.rollPattern();
+    }
+  }
+
+  onExit(): void {
+    this.loop?.stop().dispose();
+    this.pumpLoop?.stop().dispose();
+    this.loop = null;
+    this.pumpLoop = null;
+    this.synth?.triggerRelease(this.noteTime.next());
+    this.teardown();
+  }
+}
+
+/**
+ * The chord, hit rather than held.
+ *
+ * The rest of this orchestra states harmony by swelling into it over four
+ * seconds. A stab states it in forty milliseconds and then gets out, and
+ * that difference is most of what separates a record you sway to from one
+ * you dance to. Chicago's is an organ on the offbeat, bright and a little
+ * cheap and completely joyful; Detroit's is a string chord played by a
+ * machine that wishes it were an orchestra, which is the sound of that city
+ * in one gesture.
+ */
+export class ClubStab extends VoiceBase {
+  private synth: Tone.PolySynth | null = null;
+  private filter: Tone.Filter | null = null;
+  private loop: Tone.Loop | null = null;
+  private readonly stabTime = new ScheduleTime();
+  private pattern: boolean[] = EMPTY_PATTERN;
+  private step = 0;
+  private bars = 0;
+  private builtGroove: 'house' | 'techno' = 'house';
+
+  constructor(dest: Bus) {
+    super('clubStab', dest, 0.2);
+    this.fadeSpeed = 0.018;
+    this.respondsToEnsemble = true;
+  }
+
+  onEnter(ctx: HarmonicContext): void {
+    this.clearPendingDispose();
+    this.build(clubGroove(ctx));
+    this.step = 0;
+    this.bars = 0;
+    this.rollPattern();
+    this.loop = new Tone.Loop((time) => this.tick(time), '16n').start('+0.1');
+  }
+
+  private build(groove: 'house' | 'techno'): void {
+    const house = groove === 'house';
+    this.filter = new Tone.Filter(house ? 3200 : 2400, 'lowpass', -12).connect(this.output);
+    this.synth = new Tone.PolySynth(
+      Tone.Synth,
+      house
+        ? {
+            // Drawbars: a square is the closest a single oscillator gets to
+            // the organ every one of these records ran through.
+            oscillator: { type: 'square4' },
+            envelope: { attack: 0.006, decay: 0.3, sustain: 0.04, release: 0.4 },
+          }
+        : {
+            oscillator: { type: 'fatsawtooth', spread: 24, count: 3 },
+            envelope: { attack: 0.012, decay: 0.5, sustain: 0.08, release: 0.7 },
+          },
+    ).connect(this.filter);
+    this.synth.maxPolyphony = 8;
+    this.builtGroove = groove;
+  }
+
+  private teardown(): void {
+    this.releaseAndDispose(this.synth, 1.2, this.filter);
+    this.synth = null;
+    this.filter = null;
+  }
+
+  private rollPattern(): void {
+    this.pattern = stepsToPattern(
+      this.builtGroove === 'house'
+        ? pickOne([
+            [2, 10],
+            [6, 14],
+            [2, 6, 10, 14],
+            [3, 11],
+            [2, 10, 14],
+          ])
+        : pickOne([
+            [6, 14],
+            [14],
+            [3, 11],
+            [6, 10, 14],
+          ]),
+    );
+  }
+
+  private tick(time: number): void {
+    if (!this.synth || this.synth.disposed || !this.harmonicContext) return;
+    const step = this.step % 16;
+    if (step === 0) {
+      this.bars++;
+      // Stabs come and go across the bar rather than repeating for the whole
+      // piece — a hook you hear every bar for ten minutes stops being a hook.
+      if (this.bars % 4 === 0) this.rollPattern();
+    }
+    this.step++;
+    if (!this.pattern[step]) return;
+
+    const ctx = this.harmonicContext;
+    const sixteenth = Tone.Time('16n').toSeconds();
+    const notes = ctx.chordDegrees.map((d) => this.noteAt(ctx, d, this.builtGroove === 'house' ? 1 : 0));
+    this.synth.triggerAttackRelease(
+      notes,
+      sixteenth * (this.builtGroove === 'house' ? 0.9 : 1.6),
+      this.stabTime.atLeast(time),
+      0.14 + Math.random() * 0.05,
+    );
+  }
+
+  onHarmonicShift(): void {
+    this.rollPattern();
+  }
+
+  onUpdate(): void {
+    const groove = this.harmonicContext ? clubGroove(this.harmonicContext) : this.builtGroove;
+    if (groove !== this.builtGroove) {
+      this.teardown();
+      this.build(groove);
+      this.rollPattern();
+    }
+  }
+
+  onExit(): void {
+    this.loop?.stop().dispose();
+    this.loop = null;
+    this.teardown();
+  }
+}
+
+/** Which four-four groove is running. Falls back to house off a night piece,
+ * which only matters for the instant between activation and the first tick. */
+function clubGroove(ctx: HarmonicContext): 'house' | 'techno' {
+  return ctx.character === 'night' && ctx.nightGroove === 'techno' ? 'techno' : 'house';
+}
+
 export function createAllVoices(
   padBus: Bus,
   melodyBus: Bus,
@@ -1423,6 +2046,7 @@ export function createAllVoices(
   subBus: Bus,
   foundationBus: Bus = padBus,
   pulseBus: Bus = padBus,
+  bassBus: Bus = padBus,
 ): VoiceBase[] {
   return [
     new OrchestraWhole(padBus),
@@ -1445,6 +2069,8 @@ export function createAllVoices(
     new SparkRun(melodyBus),
     new RhythmicPulse(padBus),
     new PulseKit(pulseBus),
+    new ClubBass(bassBus),
+    new ClubStab(melodyBus),
     new VinylCrackle(airBus),
     new GranularTexture(airBus),
     ...createClipVoices(padBus, melodyBus, airBus),
