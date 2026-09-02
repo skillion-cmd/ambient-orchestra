@@ -93,6 +93,29 @@ await page.evaluate(() => {
 });
 ```
 
+Two things about that engine handle are worth knowing before you use it.
+
+`Tone.Limiter.reduction` (and `Tone.Compressor.reduction`) **lies here** — the
+pulse limiter has been seen reporting −13dB of gain reduction while its input
+and output peaks matched to three decimals. Measure a limiter by tapping both
+sides, never by reading `reduction`.
+
+`engine.update(dt)` can be called directly, and calling it many times in one
+`page.evaluate` reproduces exactly what `clockStep` does after a stall: several
+engine sub-steps in one JavaScript turn, all reading the same `Tone.now()`.
+That is the shape of bug an ordinary real-time run finds only every few
+minutes, so it is the fastest way to test anything about scheduling:
+
+```js
+await page.evaluate(() => {
+  const thrown = [];
+  for (let i = 0; i < 800; i++) {
+    try { window.__ao.update(0.25); } catch (e) { thrown.push(e.message); }
+  }
+  return thrown;
+});
+```
+
 `getPlayInstrument().noteOn(midi, velocity)` plays at a chosen velocity,
 which the computer keybed (fixed 0.7) and the on-screen keys (0.75) cannot.
 `setBlend('behind'|'with'|'front')` switches the balance without clicking.
@@ -104,6 +127,30 @@ that floor moving for a while after you stop.
   - Scale tuning voices two octaves above `rootMidi` (the field's *bass*),
     which keeps it within an octave of chromatic on the same key. If a change
     makes those two jump apart, that lift is what moved.
+
+Two shapes of scheduling bug live here, and they fail in different places:
+
+- Inside `engine.update()` — a voice's `onUpdate` throws, the Conductor
+  catches it and warns once per voice. Reproduce with the `update(0.25)` loop
+  above.
+- Inside a `Tone.Loop` callback — the transport's own tick, which nothing in
+  the engine wraps, so the throw takes the rest of that tick's events with it
+  whatever voice they belonged to. These only appear in real time, minutes
+  apart. `?character=night&pulse=kit` provokes them fastest: it is the
+  busiest scheduler in the app.
+
+Watch `page.on('pageerror')` on any long run. The orchestra is scheduled
+audio, so its failures are thrown exceptions rather than wrong pixels, and
+they arrive minutes apart — a run that produced no errors is only evidence if
+it was long enough. Filter tone.js frames out of the stack to see the app
+frame that scheduled the event.
+
+To check the low end, read the output analyser's `getFloatFrequencyData` in
+two bands: worst-frame peak below 32Hz against 32–120Hz. Sub-audible energy is
+inaudible by definition, so it cannot be found by listening and does not show
+up in a peak meter either — the gap between those two bands is the number that
+moves. It should sit around 12dB; when it was 3.6dB the kick's fundamental was
+at 18–29Hz.
 
 Screenshots after ~5s of runtime give the trail buffer time to develop —
 a fresh switch looks empty.

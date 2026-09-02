@@ -3,6 +3,7 @@ import { createClipVoices } from '../clips';
 import { isMelodyAccent } from '../HarmonicField';
 import type { HarmonicContext, SoundKnobs } from '../types';
 import { euclidean, euclideanHit } from '../Euclidean';
+import { fitToStep, ScheduleTime } from '../ScheduleTime';
 import { VoiceBase } from '../VoiceBase';
 
 type Bus = Tone.ToneAudioNode;
@@ -36,7 +37,7 @@ export class HarmonyBed extends VoiceBase {
       },
     }).connect(this.filter);
     this.synth.maxPolyphony = 10;
-    this.synth.triggerAttack(this.fullVoicing(ctx), Tone.now(), 0.13);
+    this.synth.triggerAttack(this.fullVoicing(ctx), this.at(), 0.13);
   }
 
   /** Single source of truth for the voicing — every re-attack must play the
@@ -48,7 +49,7 @@ export class HarmonyBed extends VoiceBase {
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
     this.synth.releaseAll();
-    this.synth.triggerAttack(this.fullVoicing(ctx), Tone.now() + 0.5, 0.11);
+    this.synth.triggerAttack(this.fullVoicing(ctx), this.atAfter(0.5), 0.11);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
@@ -108,7 +109,7 @@ export class DreamMelody extends VoiceBase {
   onEnsembleCue(ctx: HarmonicContext): void {
     if (!this.synth) return;
     const note = this.getMelodyNote(ctx, 2);
-    this.synth.triggerAttackRelease(note, '2n', Tone.now(), 0.12);
+    this.synth.triggerAttackRelease(note, '2n', this.at(), 0.12);
   }
 
   onUpdate(dt: number, interest: number, knobs: SoundKnobs): void {
@@ -128,7 +129,7 @@ export class DreamMelody extends VoiceBase {
       const counterDeg =
         ctx.melodyDegrees[(ctx.melodyIndex + 2) % ctx.melodyDegrees.length] ?? 2;
       const counterNote = this.noteAt(ctx, counterDeg, 2);
-      this.synth.triggerAttackRelease(counterNote, '2n', Tone.now(), 0.07);
+      this.synth.triggerAttackRelease(counterNote, '2n', this.at(), 0.07);
     }
   }
 
@@ -139,7 +140,7 @@ export class DreamMelody extends VoiceBase {
     const accented = isMelodyAccent(ctx, this.accentStep);
     this.accentStep++;
     const vel = accented ? 0.22 + ctx.brightness * 0.08 : 0.14;
-    this.synth.triggerAttack(note, Tone.now(), vel);
+    this.synth.triggerAttack(note, this.at(), vel);
   }
 
   onExit(): void {
@@ -264,13 +265,13 @@ export class WarmPad extends VoiceBase {
     }).connect(this.filter);
     this.synth.maxPolyphony = 6;
     const notes = this.getChordNotes(ctx, 0);
-    this.synth.triggerAttack(notes, Tone.now(), 0.15);
+    this.synth.triggerAttack(notes, this.at(), 0.15);
   }
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
     this.synth.releaseAll();
-    this.synth.triggerAttack(this.getChordNotes(ctx, 0), Tone.now() + 1, 0.12);
+    this.synth.triggerAttack(this.getChordNotes(ctx, 0), this.atAfter(1), 0.12);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
@@ -309,14 +310,14 @@ export class GlassPad extends VoiceBase {
     }).connect(this.output);
     this.synth.maxPolyphony = 4;
     const notes = ctx.chordDegrees.map((d) => this.noteAt(ctx, d, 2));
-    this.synth.triggerAttack(notes, Tone.now(), 0.16);
+    this.synth.triggerAttack(notes, this.at(), 0.16);
   }
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
     this.synth.releaseAll();
     const notes = ctx.chordDegrees.map((d) => this.noteAt(ctx, d, 2));
-    this.synth.triggerAttack(notes, Tone.now() + 0.8, 0.14);
+    this.synth.triggerAttack(notes, this.atAfter(0.8), 0.14);
   }
 
   onUpdate(): void {}
@@ -371,7 +372,7 @@ export class DistantBell extends VoiceBase {
     }).connect(this.output);
     const deg = ctx.melodyDegrees[ctx.melodyIndex] ?? this.pickDegree(ctx);
     const note = this.noteAt(ctx, deg, 2);
-    this.synth.triggerAttackRelease(note, '2n', Tone.now(), 0.16);
+    this.synth.triggerAttackRelease(note, '2n', this.at(), 0.16);
   }
 
   onUpdate(): void {}
@@ -412,7 +413,7 @@ export class TapeChoir extends VoiceBase {
       },
     }).connect(this.filter);
     this.synth.maxPolyphony = 6;
-    this.synth.triggerAttack(this.fullVoicing(ctx), Tone.now(), 0.13);
+    this.synth.triggerAttack(this.fullVoicing(ctx), this.at(), 0.13);
   }
 
   /** Full choir voicing — re-attacks must not thin it (see HarmonyBed). */
@@ -426,7 +427,7 @@ export class TapeChoir extends VoiceBase {
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
     this.synth.releaseAll();
-    this.synth.triggerAttack(this.fullVoicing(ctx), Tone.now() + 1.2, 0.11);
+    this.synth.triggerAttack(this.fullVoicing(ctx), this.atAfter(1.2), 0.11);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
@@ -471,13 +472,13 @@ export class ModalStrings extends VoiceBase {
       envelope: { attack: 3, decay: 1.5, sustain: 0.55, release: 12 },
     }).connect(this.filter);
     const notes = this.getChordNotes(ctx, 0);
-    this.synth.triggerAttack(notes, Tone.now(), 0.2);
+    this.synth.triggerAttack(notes, this.at(), 0.2);
   }
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
     this.synth.releaseAll();
-    this.synth.triggerAttack(this.getChordNotes(ctx, 0), Tone.now() + 0.6, 0.16);
+    this.synth.triggerAttack(this.getChordNotes(ctx, 0), this.atAfter(0.6), 0.16);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
@@ -512,7 +513,7 @@ export class CrystalCluster extends VoiceBase {
     }).connect(this.output);
     const hookLen = Math.min(4, ctx.melodyDegrees.length);
     const notes = ctx.melodyDegrees.slice(0, hookLen).map((d) => this.noteAt(ctx, d, 2));
-    this.synth.triggerAttack(notes, Tone.now(), 0.1 + ctx.brightness * 0.06);
+    this.synth.triggerAttack(notes, this.at(), 0.1 + ctx.brightness * 0.06);
   }
 
   onHarmonicShift(ctx: HarmonicContext): void {
@@ -520,7 +521,7 @@ export class CrystalCluster extends VoiceBase {
     this.synth.releaseAll();
     const hookLen = Math.min(4, ctx.melodyDegrees.length);
     const notes = ctx.melodyDegrees.slice(0, hookLen).map((d) => this.noteAt(ctx, d, 2));
-    this.synth.triggerAttack(notes, Tone.now() + 0.5, 0.08);
+    this.synth.triggerAttack(notes, this.atAfter(0.5), 0.08);
   }
 
   onUpdate(): void {}
@@ -615,7 +616,12 @@ export class SlowArp extends VoiceBase {
   private playArpNote(ctx: HarmonicContext): void {
     const deg = ctx.melodyDegrees[this.arpIndex] ?? 0;
     const note = this.noteAt(ctx, deg, 1);
-    this.synth?.triggerAttackRelease(note, '4n', Tone.now(), 0.13);
+    this.synth?.triggerAttackRelease(
+      note,
+      fitToStep(Tone.Time('4n').toSeconds(), this.interval),
+      this.at(),
+      0.13,
+    );
   }
 
   onExit(): void {
@@ -640,14 +646,14 @@ export class HarmonicGhost extends VoiceBase {
       envelope: { attack: 2.5, decay: 1, sustain: 0.35, release: 12 },
     }).connect(this.output);
     const notes = ctx.chordDegrees.slice(0, 2).map((d) => this.noteAt(ctx, d, 1));
-    this.synth.triggerAttack(notes, Tone.now(), 0.14);
+    this.synth.triggerAttack(notes, this.at(), 0.14);
   }
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
     this.synth.releaseAll();
     const notes = ctx.chordDegrees.slice(0, 2).map((d) => this.noteAt(ctx, d, 1));
-    this.synth.triggerAttack(notes, Tone.now() + 0.7, 0.12);
+    this.synth.triggerAttack(notes, this.atAfter(0.7), 0.12);
   }
 
   onUpdate(): void {}
@@ -724,7 +730,7 @@ export class OrchestraWhole extends VoiceBase {
       },
     }).connect(this.filter);
     this.synth.maxPolyphony = 14;
-    this.synth.triggerAttack(this.fullVoicing(ctx), Tone.now(), 0.12);
+    this.synth.triggerAttack(this.fullVoicing(ctx), this.at(), 0.12);
   }
 
   /** The full three-octave stack — re-attacks that drop the low octave
@@ -740,7 +746,7 @@ export class OrchestraWhole extends VoiceBase {
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
     this.synth.releaseAll();
-    this.synth.triggerAttack(this.fullVoicing(ctx), Tone.now() + 2, 0.1);
+    this.synth.triggerAttack(this.fullVoicing(ctx), this.atAfter(2), 0.1);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
@@ -823,7 +829,12 @@ export class MelodicFlurry extends VoiceBase {
   private playStep(ctx: HarmonicContext): void {
     const deg = ctx.melodyDegrees[this.runIndex % ctx.melodyDegrees.length] ?? 0;
     const note = this.noteAt(ctx, deg, 1 + (this.runIndex % 2));
-    this.synth?.triggerAttackRelease(note, '16n', Tone.now(), 0.14);
+    this.synth?.triggerAttackRelease(
+      note,
+      fitToStep(Tone.Time('16n').toSeconds(), this.stepInterval),
+      this.at(),
+      0.14,
+    );
   }
 
   onExit(): void {
@@ -841,6 +852,14 @@ export class MelodicFlurry extends VoiceBase {
     super.exit();
   }
 }
+
+/** Widest a night nudge can move a hit, either way. */
+const NUDGE_SPAN_SEC = 0.03;
+/** The same for the open kit's per-hit jitter. */
+const JITTER_SPAN_SEC = 0.016;
+
+/** SparkRun's fixed step. Its note length is fitted to this, not to a bar. */
+const SPARK_STEP_SEC = 0.06;
 
 export class SparkRun extends VoiceBase {
   private synth: Tone.Synth | null = null;
@@ -880,7 +899,7 @@ export class SparkRun extends VoiceBase {
     }
     if (!this.synth || !this.harmonicContext || this.done) return;
     this.timer += dt;
-    if (this.timer >= 0.06) {
+    if (this.timer >= SPARK_STEP_SEC) {
       this.timer = 0;
       this.runIndex++;
       if (this.runIndex >= 12 + Math.floor(Math.random() * 6)) {
@@ -898,7 +917,15 @@ export class SparkRun extends VoiceBase {
         (ctx.melodyIndex + this.runIndex) % ctx.melodyDegrees.length
       ] ?? 0;
     const note = this.noteAt(ctx, deg, 2 + (this.runIndex % 2));
-    this.synth?.triggerAttackRelease(note, '32n', Tone.now(), 0.11);
+    // A 32nd is longer than the step below 125bpm, and the engine spends most
+    // of its range under that — the run would then re-attack a mono synth
+    // still releasing the note before it.
+    this.synth?.triggerAttackRelease(
+      note,
+      fitToStep(Tone.Time('32n').toSeconds(), SPARK_STEP_SEC),
+      this.at(),
+      0.11,
+    );
   }
 
   onExit(): void {
@@ -921,6 +948,8 @@ export class SparkRun extends VoiceBase {
 export class RhythmicPulse extends VoiceBase {
   private body: Tone.MembraneSynth | null = null;
   private clickNoise: Tone.NoiseSynth | null = null;
+  private readonly bodyTime = new ScheduleTime();
+  private readonly clickTime = new ScheduleTime();
   private clickFilter: Tone.Filter | null = null;
   private loop: Tone.Loop | null = null;
   private barCount = 0;
@@ -933,9 +962,11 @@ export class RhythmicPulse extends VoiceBase {
 
   onEnter(): void {
     this.clearPendingDispose();
+    // Octaves halved alongside the fundamental moving up one, so the beater
+    // sweep still starts where it did. See PulseKit's kick.
     this.body = new Tone.MembraneSynth({
       pitchDecay: 0.04,
-      octaves: 2,
+      octaves: 1,
       envelope: { attack: 0.002, decay: 0.06, sustain: 0, release: 0.08 },
     }).connect(this.output);
     this.clickFilter = new Tone.Filter(300, 'bandpass', -12).connect(this.output);
@@ -949,15 +980,17 @@ export class RhythmicPulse extends VoiceBase {
   }
 
   private tick(time: number): void {
+    if (this.body?.disposed) return;
     this.barCount++;
     if (this.barCount < this.nextGap) return;
     this.barCount = 0;
     this.nextGap = 2 + Math.floor(Math.random() * 3);
     const root = this.harmonicContext
-      ? Tone.Frequency(this.harmonicContext.rootMidi - 24, 'midi').toFrequency()
+      ? Tone.Frequency(this.harmonicContext.rootMidi - 12, 'midi').toFrequency()
       : 45;
-    this.body?.triggerAttackRelease(root, '16n', time, 0.9);
-    this.clickNoise?.triggerAttackRelease('32n', time + 0.005, 0.25);
+    // Attack only — both are voiced with `sustain: 0`. See PulseKit's tick.
+    this.body?.triggerAttack(root, this.bodyTime.atLeast(time), 0.9);
+    this.clickNoise?.triggerAttack(this.clickTime.atLeast(time + 0.005), 0.25);
   }
 
   onUpdate(): void {}
@@ -1038,7 +1071,7 @@ function stepsToPattern(steps: number[], length = 16): boolean[] {
  */
 function fixedNudges(length = 16): number[] {
   const out: number[] = [];
-  for (let i = 0; i < length; i++) out.push((Math.random() - 0.45) * 0.03);
+  for (let i = 0; i < length; i++) out.push((Math.random() - 0.45) * NUDGE_SPAN_SEC);
   return out;
 }
 
@@ -1058,6 +1091,17 @@ export class PulseKit extends VoiceBase {
   private snare: Tone.NoiseSynth | null = null;
   private snareFilter: Tone.Filter | null = null;
   private loop: Tone.Loop | null = null;
+  /**
+   * One clock per drum, not one for the kit.
+   *
+   * The constraint is per node — a snare hit and a hat hit at the same instant
+   * are fine and normal — so a shared clock would push unrelated drums apart
+   * for no reason. Each drum only has to stay ordered against itself.
+   */
+  private readonly kickTime = new ScheduleTime();
+  private readonly shakerTime = new ScheduleTime();
+  private readonly clickTime = new ScheduleTime();
+  private readonly snareTime = new ScheduleTime();
 
   private kickPattern: boolean[] = [];
   private shakerPattern: boolean[] = [];
@@ -1076,9 +1120,13 @@ export class PulseKit extends VoiceBase {
   onEnter(): void {
     this.clearPendingDispose();
 
+    // `octaves` is 2, not 3, because the kick's fundamental moved up an
+    // octave (see `tick`). The beater sweep still starts in the same place it
+    // always did — 4x a 37-58Hz root is the 147-233Hz it used to reach from
+    // 8x an 18-29Hz one — so the attack is unchanged and only the body moved.
     this.kick = new Tone.MembraneSynth({
       pitchDecay: 0.05,
-      octaves: 3,
+      octaves: 2,
       envelope: { attack: 0.001, decay: 0.24, sustain: 0, release: 0.12 },
     }).connect(this.output);
 
@@ -1158,6 +1206,10 @@ export class PulseKit extends VoiceBase {
   }
 
   private tick(time: number): void {
+    // The transport can hand this callback out after the kit has left and
+    // torn its drums down. Nothing out here catches a throw, and it would
+    // take the rest of the transport's tick with it.
+    if (this.kick?.disposed) return;
     const step = this.step % 16;
     if (step === 0) {
       this.bars++;
@@ -1171,24 +1223,57 @@ export class PulseKit extends VoiceBase {
     // little random jitter so no two hits sit exactly on the grid.
     const sixteenth = Tone.Time('16n').toSeconds();
     const swung = step % 2 === 1 ? this.swing * 0.3 * sixteenth : 0;
-    const drift = this.nudges ? this.nudges[step]! : (Math.random() - 0.5) * 0.016;
+    const drift = this.nudges
+      ? this.nudges[step]!
+      : (Math.random() - 0.5) * JITTER_SPAN_SEC;
     const at = time + swung + drift;
+
+    /**
+     * Attack only, no release.
+     *
+     * Every drum in this kit is voiced with `sustain: 0`, so its decay is the
+     * note and the release does nothing audible — `triggerAttackRelease` was
+     * scheduling a stop that had no musical job and one real consequence.
+     * The note values here are chosen without reference to how far away the
+     * next step lands, and the gap is a good deal shorter than a sixteenth:
+     * swing pushes an offbeat later while the step after it stays put, and
+     * the nudges pull hits around by up to a nudge span more. When the note
+     * outlasted the gap, a monophonic drum was asked to re-attack with its
+     * own stop still scheduled ahead of it, and Web Audio threw — out in the
+     * transport's tick, where nothing in the engine catches it and the rest
+     * of that tick's events went with it. The night snare's ghost-into-
+     * backbeat pair did it reliably. Dropping the release removes the whole
+     * class of collision rather than trying to stay ahead of it, and clamping
+     * a duration would not have been enough anyway: the gap is computed from
+     * the tempo at the time of the hit, and the tempo keeps moving.
+     */
 
     const rootMidi = this.harmonicContext?.rootMidi ?? 45;
     const night = this.harmonicContext?.character === 'night';
 
     if (euclideanHit(this.kickPattern, step, night ? 0.99 : 0.94)) {
-      const pitch = Tone.Frequency(rootMidi - 24, 'midi').toFrequency();
+      // One octave under the root, not two.
+      //
+      // At two the fundamental landed at 18-29Hz, which is under or barely at
+      // the bottom of hearing: no speaker outside a cinema reproduces it, so
+      // it arrived as cone excursion rather than as a note — the low end going
+      // muddy and buzzy on the pieces that draw a kit, worst on the small
+      // speakers most likely to be listening. It also spent real headroom on
+      // something nobody could hear, and measured only ~3.5dB under the whole
+      // audible bass band while doing it. An octave up is 37-58Hz: the same
+      // range the deep-pressure sub already works in, and a kick you can
+      // actually hear land.
+      const pitch = Tone.Frequency(rootMidi - 12, 'midi').toFrequency();
       // A 2-step kick is a thud placed just so, not a punch: softer and
       // more even than the open kit's, because the pattern carries it.
       const vel = night ? 0.6 + Math.random() * 0.08 : 0.72 + Math.random() * 0.16;
-      this.kick?.triggerAttackRelease(pitch, '16n', at, vel);
+      this.kick?.triggerAttack(pitch, this.kickTime.atLeast(at), vel);
     }
 
     if (euclideanHit(this.shakerPattern, step, night ? 0.92 : 0.8)) {
       // Accent the downbeat-adjacent steps; the rest stay ghosted.
       const accent = step % 4 === 0 ? 0.28 : 0.1 + Math.random() * 0.12;
-      this.shaker?.triggerAttackRelease('64n', at, accent);
+      this.shaker?.triggerAttack(this.shakerTime.atLeast(at), accent);
     }
 
     if (euclideanHit(this.clickPattern, step, night ? 0.97 : 0.6)) {
@@ -1196,14 +1281,17 @@ export class PulseKit extends VoiceBase {
         // Backbeat on 2 and 4 holds flat against the lurching kick; the
         // off-grid extras are ghosts.
         const backbeat = step === 4 || step === 12;
-        this.snare?.triggerAttackRelease(
-          backbeat ? '16n' : '32n',
-          at,
+        this.snare?.triggerAttack(
+          this.snareTime.atLeast(at),
           backbeat ? 0.3 + Math.random() * 0.06 : 0.09 + Math.random() * 0.06,
         );
       } else {
         const pitch = Tone.Frequency(rootMidi + 12, 'midi').toFrequency();
-        this.click?.triggerAttackRelease(pitch, '32n', at + 0.004, 0.18 + Math.random() * 0.1);
+        this.click?.triggerAttack(
+          pitch,
+          this.clickTime.atLeast(at + 0.004),
+          0.18 + Math.random() * 0.1,
+        );
       }
     }
   }

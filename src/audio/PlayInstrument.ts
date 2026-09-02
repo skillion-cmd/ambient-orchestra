@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
 import { advanceEnergy, chordTrim, velocityCurve } from './PlayBlend';
+import { ScheduleTime } from './ScheduleTime';
 import { mapPlayNote, midiToNoteName, type PlayTuning } from './PlayMapping';
 import { DEFAULT_PRESET_ID, findPreset, type PlayPreset } from './PlayPresets';
 import type { HarmonicContext } from './types';
@@ -58,8 +59,11 @@ export class PlayInstrument {
   private energy = 0;
   private onNote: ((event: PlayNoteEvent) => void) | null = null;
   private disposeTimeouts: ReturnType<typeof setTimeout>[] = [];
-  /** Last time handed out by `at()` — see there. */
-  private lastScheduled = 0;
+  /** Keeps this instrument's events strictly ordered — see `ScheduleTime`.
+   * A keyboard hits that constraint constantly: re-striking a held key
+   * releases and re-attacks the same pitch, and swapping preset mid-chord
+   * releases the old synth in the same breath as the next note. */
+  private readonly schedule = new ScheduleTime();
 
   constructor(destination: Tone.ToneAudioNode) {
     this.filter = new Tone.Filter(this.preset.cutoff.rest, 'lowpass', -12).connect(
@@ -139,7 +143,7 @@ export class PlayInstrument {
     this.synth = null;
     if (outgoing) {
       try {
-        outgoing.releaseAll(this.at());
+        outgoing.releaseAll(this.schedule.next());
       } catch {
         /* already gone */
       }
@@ -173,7 +177,7 @@ export class PlayInstrument {
     // moment of every added note is the un-compensated one.
     this.applyChordTrim();
     try {
-      synth.triggerAttack(note, this.at(), shaped);
+      synth.triggerAttack(note, this.schedule.next(), shaped);
     } catch {
       this.held.delete(midiNote);
       this.applyChordTrim();
@@ -196,7 +200,7 @@ export class PlayInstrument {
     // attack side uses, so lifting a finger doesn't step the rest of the chord.
     this.applyChordTrim();
     try {
-      this.synth?.triggerRelease(entry.note, this.at());
+      this.synth?.triggerRelease(entry.note, this.schedule.next());
     } catch {
       /* synth swapped out from under it */
     }
@@ -233,7 +237,7 @@ export class PlayInstrument {
     // a chord that is supposed to be dying away. The next note-on resets it,
     // where a fresh attack covers the move.
     try {
-      this.synth?.releaseAll(this.at());
+      this.synth?.releaseAll(this.schedule.next());
     } catch {
       /* already gone */
     }
@@ -279,24 +283,6 @@ export class PlayInstrument {
       /* already disposed */
     }
     this.synth = null;
-  }
-
-  /**
-   * A strictly increasing schedule time.
-   *
-   * `Tone.now()` returns the same value for everything that happens inside one
-   * tick, and Web Audio rejects two events at the identical time on the same
-   * voice — "Start time must be strictly greater than previous start time".
-   * A keyboard hits that constantly: re-striking a held key releases and
-   * re-attacks the same pitch, and swapping preset mid-chord releases the old
-   * synth in the same breath as the next note. Nudging each event a tenth of a
-   * millisecond past the last keeps them ordered and stays far below anything
-   * anyone could hear — a hundred events in one tick add up to 10ms.
-   */
-  private at(): number {
-    const time = Math.max(Tone.now(), this.lastScheduled + 1e-4);
-    this.lastScheduled = time;
-    return time;
   }
 
   private buildSynth(): void {

@@ -49,6 +49,7 @@ export class AudioEngine {
   private readonly widener: Tone.StereoWidener;
   private readonly tiltEQ: Tone.EQ3;
   private readonly highpass: Tone.Filter;
+  private readonly rumble: Tone.Filter;
   private readonly roomWall: Tone.Filter;
   private readonly roomGain: Tone.Gain;
   private readonly roomWalk = new RoomWalk();
@@ -133,6 +134,21 @@ export class AudioEngine {
     this.widener = new Tone.StereoWidener(0.55);
     this.tiltEQ = new Tone.EQ3(-1, 0, 1);
     this.highpass = new Tone.Filter(90, 'highpass');
+    // The last thing before the limiter, and the only thing guarding the
+    // bottom of the mix.
+    //
+    // The 90Hz highpass above protects the pad and melody path, but the two
+    // paths carrying the actual low end — the dry sub and the dry beat — both
+    // take a shortcut past it on purpose, because a 90Hz highpass would erase
+    // what they are for. That left nothing at all below them, and sub-audible
+    // energy is not harmless: it is inaudible on every speaker anyone is
+    // likely to be using, so it never arrives as a note, but it still moves
+    // the cone, still spends headroom, and still intermodulates with what you
+    // *can* hear — the whole mix going gritty on the low notes rather than
+    // just the low notes going gritty. 30Hz sits below the deepest thing here
+    // that is meant to be heard (36Hz), so it takes only what nothing was
+    // going to reproduce.
+    this.rumble = new Tone.Filter(30, 'highpass', -24);
     this.limiter = new Tone.Limiter(-2);
     this.analyser = new Tone.Analyser('fft', 512);
 
@@ -155,7 +171,8 @@ export class AudioEngine {
     this.delay.connect(this.reverb);
     this.reverb.connect(this.widener);
     this.widener.connect(this.tiltEQ);
-    this.tiltEQ.connect(this.limiter);
+    this.tiltEQ.connect(this.rumble);
+    this.rumble.connect(this.limiter);
     this.limiter.connect(this.analyser);
     this.analyser.toDestination();
 
