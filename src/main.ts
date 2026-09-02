@@ -23,6 +23,7 @@ import {
 import { ModeToggle } from './ui/ModeToggle';
 import { PlayPanel } from './ui/PlayPanel';
 import { PlayController } from './input/PlayController';
+import { DEFAULT_BLEND_ID } from './audio/PlayBlend';
 import { DEFAULT_PRESET_ID, findPreset } from './audio/PlayPresets';
 import { VisualModeToggle } from './ui/VisualModeToggle';
 import { loadStoredVisualMode } from './visual/VisualMode';
@@ -103,6 +104,7 @@ const playPanel = new PlayPanel(
     presetId: findPreset(storedPlay?.presetId ?? DEFAULT_PRESET_ID).id,
     tuning: storedPlay?.tuning ?? 'scale',
     octaveShift: storedPlay?.octaveShift ?? 0,
+    blend: storedPlay?.blend ?? DEFAULT_BLEND_ID,
   },
   {
     onPreset: (id) => {
@@ -115,6 +117,10 @@ const playPanel = new PlayPanel(
     },
     onOctave: (shift) => {
       playController.setOctave(shift);
+      savePlayState();
+    },
+    onBlend: (blend) => {
+      audioEngine.setBlend(blend);
       savePlayState();
     },
     onNoteOn: (note, velocity) => playController.noteOn(note, velocity),
@@ -147,6 +153,7 @@ const initialPlay = playPanel.getState();
 playController.setPreset(initialPlay.presetId);
 playController.setTuning(initialPlay.tuning);
 playController.setOctave(initialPlay.octaveShift);
+audioEngine.setBlend(initialPlay.blend);
 playPanel.setStatus('idle', null);
 leftData.appendChild(playPanel.element);
 
@@ -206,6 +213,19 @@ const modeToggle = new ModeToggle(mode, setMode);
 modeToggleSlot.appendChild(modeToggle.element);
 controls.setMode(mode);
 audioEngine.setMode(mode);
+// The restored mode has to arm the instrument too. Web MIDI still isn't asked
+// for here — that needs a user gesture — but the computer keybed does not,
+// and without this a session that reopened straight into Play showed the
+// panel and answered nothing typed at it.
+playController.setActive(mode === 'play');
+// Dev-only handle for driving the page from a headless browser: the mix is
+// the thing that needs verifying and none of it is legible from the DOM, so
+// without this a check like "does a chord actually sit above the bed now"
+// can only be done by ear. Stripped from the production bundle — `import.meta
+// .env.DEV` is a compile-time constant, so the branch is dead code in a build.
+if (import.meta.env.DEV) {
+  (window as unknown as Record<string, unknown>).__ao = audioEngine;
+}
 
 let lastTime = performance.now();
 let lastAudioTime = 0;
@@ -268,7 +288,7 @@ function loop(now: number): void {
         harmonic,
         instrument.getHeldKeys(),
         instrument.getSoundingNotes(),
-        audioEngine.getEnsembleDuck() < 1,
+        audioEngine.getEnsembleDuckDepth(),
       );
     }
     visualScope.update(visualReadout, controls.getKnobs().visual, lastArt, harmonic);

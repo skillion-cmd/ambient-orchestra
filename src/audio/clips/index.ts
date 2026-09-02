@@ -22,10 +22,15 @@ export class HymnClip extends ClipVoiceBase {
     }).connect(this.output);
     this.synth.maxPolyphony = 6;
 
-    const play = () => {
-      if (!this.synth || !this.harmonicContext) return;
+    // The loop hands its callback the time the event belongs at, and that is
+    // what to schedule against — `Tone.now()` is when the callback happened
+    // to run, which is somewhere inside the transport's lookahead and is the
+    // same value for every callback the transport flushes in one turn. The
+    // first hit has no loop behind it yet, so it takes the voice's own clock.
+    const play = (time?: number) => {
+      if (!this.synth || this.synth.disposed || !this.harmonicContext) return;
       const notes = this.getChordNotes(this.harmonicContext, 0);
-      this.synth.triggerAttackRelease(notes, '2n', Tone.now(), 0.2);
+      this.synth.triggerAttackRelease(notes, '2n', time ?? this.at(), 0.2);
     };
 
     play();
@@ -63,8 +68,8 @@ export class ArpClip extends ClipVoiceBase {
 
     const chordPattern = [...ctx.chordDegrees, ...ctx.chordDegrees.slice().reverse()];
 
-    this.loop = new Tone.Loop(() => {
-      if (!this.synth || !this.harmonicContext) return;
+    this.loop = new Tone.Loop((time) => {
+      if (!this.synth || this.synth.disposed || !this.harmonicContext) return;
       const c = this.harmonicContext;
       if (!euclideanHit(this.pattern, this.step, 0.82)) {
         this.step++;
@@ -72,7 +77,7 @@ export class ArpClip extends ClipVoiceBase {
       }
       const deg = chordPattern[this.step % chordPattern.length] ?? 0;
       const note = this.noteAt(c, deg, 1);
-      this.synth.triggerAttackRelease(note, '8n', Tone.now(), 0.13);
+      this.synth.triggerAttackRelease(note, '8n', time, 0.13);
       this.step++;
     }, this.loopInterval);
     this.loop.start(0);
@@ -106,15 +111,15 @@ export class PhraseClip extends ClipVoiceBase {
     this.synth.maxPolyphony = 4;
     this.step = 0;
 
-    this.loop = new Tone.Loop(() => {
-      if (!this.synth || !this.harmonicContext) return;
+    this.loop = new Tone.Loop((time) => {
+      if (!this.synth || this.synth.disposed || !this.harmonicContext) return;
       const c = this.harmonicContext;
       const deg = c.melodyDegrees[this.step % c.melodyDegrees.length] ?? 0;
       const note = this.noteAt(c, deg, 1);
       const vel = c.melodyAccentPattern[this.step % c.melodyAccentPattern.length]
         ? 0.16
         : 0.11;
-      this.synth.triggerAttackRelease(note, '4n', Tone.now(), vel);
+      this.synth.triggerAttackRelease(note, '4n', time, vel);
       this.step++;
     }, this.loopInterval);
     this.loop.start(0);
@@ -145,8 +150,21 @@ export class TextureClip extends ClipVoiceBase {
     this.noise = new Tone.Noise('pink').connect(this.filter).start();
     this.lfo = new Tone.LFO(0.03, 600, 2200).connect(this.filter.frequency).start();
 
+    // Move the LFO's window, not the frequency the LFO is driving.
+    //
+    // The LFO above is connected to `filter.frequency`, which makes it that
+    // param's writer; ramping the same param from here as well left two
+    // things scheduling one value, and Tone rejects a write to a param a
+    // signal has taken over — out in the transport's tick, where nothing in
+    // the engine catches it and the rest of that tick's events go with it.
+    // Sweeping the LFO's own range instead gives the same wandering band-pass
+    // with one writer per parameter, which is the rule the layer buses in
+    // AudioEngine already follow.
     this.loop = new Tone.Loop(() => {
-      this.filter?.frequency.rampTo(700 + Math.random() * 1600, 4);
+      if (!this.lfo || this.lfo.disposed) return;
+      const centre = 700 + Math.random() * 1600;
+      this.lfo.min = Math.max(120, centre * 0.55);
+      this.lfo.max = centre * 1.45;
     }, this.loopInterval);
     this.loop.start(0);
   }
@@ -183,10 +201,12 @@ export class WashClip extends ClipVoiceBase {
     this.synth.maxPolyphony = 6;
 
     const notes = this.getChordNotes(ctx, 0);
-    this.synth.triggerAttack(notes, Tone.now(), 0.01);
+    this.synth.triggerAttack(notes, this.at(), 0.01);
 
     this.loop = new Tone.Loop(() => {
-      if (!this.synth) return;
+      // Same reason as TextureClip's ramp: a queued callback can outlive the
+      // node it was written for.
+      if (!this.synth || this.synth.disposed) return;
       const level = this.swellUp ? 0.24 : 0.1;
       this.synth.volume.rampTo(Tone.gainToDb(level), 6);
       this.swellUp = !this.swellUp;

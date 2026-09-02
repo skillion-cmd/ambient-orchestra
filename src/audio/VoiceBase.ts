@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { ScheduleTime } from './ScheduleTime';
 import { chordNotes, currentMelodyNote, noteFromDegree } from './HarmonicField';
 import type { HarmonicContext, SoundKnobs, VoiceState } from './types';
 
@@ -37,6 +38,8 @@ export abstract class VoiceBase {
   protected level = 0;
   protected targetLevel = 0;
   protected readonly output: Tone.Gain;
+  /** Keeps this voice's own events strictly ordered — see `at()`. */
+  private readonly schedule = new ScheduleTime();
   /** Stereo panner OR HRTF 3D panner, depending on `spatial`. */
   private readonly panNode: Tone.Panner | Tone.Panner3D;
   private readonly spatial: boolean;
@@ -270,6 +273,23 @@ export abstract class VoiceBase {
     this.lastFilterFreq = freq;
   }
 
+  /**
+   * When to schedule the next sound from this voice.
+   *
+   * Always this, never a bare `Tone.now()` — the engine runs several update
+   * steps inside one JavaScript turn when it is catching up, and they all
+   * read the same `Tone.now()`. See `ScheduleTime`.
+   */
+  protected at(): number {
+    return this.schedule.next();
+  }
+
+  /** As `at()`, for the deliberately-late second attack that overlaps a
+   * chord change with the chord it replaces. */
+  protected atAfter(offsetSec: number): number {
+    return this.schedule.nextAfter(offsetSec);
+  }
+
   protected freqFromDegree(degree: number, ctx: HarmonicContext, octave = 0): number {
     const idx = ((degree % ctx.scale.length) + ctx.scale.length) % ctx.scale.length;
     const semitones = ctx.scale[idx]! + octave * 12;
@@ -341,7 +361,7 @@ export abstract class VoiceBase {
   ): void {
     if (!synth) return;
     synth.releaseAll();
-    synth.triggerAttack(notes, Tone.now(), velocity);
+    synth.triggerAttack(notes, this.at(), velocity);
     this.sinceAttack = 0;
   }
 

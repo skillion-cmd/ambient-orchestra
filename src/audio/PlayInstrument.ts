@@ -1,4 +1,6 @@
 import * as Tone from 'tone';
+import { advanceEnergy, chordTrim, velocityCurve } from './PlayBlend';
+import { ScheduleTime } from './ScheduleTime';
 import { mapPlayNote, midiToNoteName, type PlayTuning } from './PlayMapping';
 import { DEFAULT_PRESET_ID, findPreset, type PlayPreset } from './PlayPresets';
 import type { HarmonicContext } from './types';
@@ -37,6 +39,9 @@ export class PlayInstrument {
   private preset: PlayPreset = findPreset(DEFAULT_PRESET_ID);
   private readonly held = new Map<number, HeldNote>();
   private readonly gain: Tone.Gain;
+  /** Polyphony compensation — see `chordTrim`. Ramped, never written raw. */
+  private readonly chordGain: Tone.Gain;
+  private lastChordTrim = 1;
   private readonly filter: Tone.Filter;
   private tuning: PlayTuning = 'scale';
   private octaveShift = 0;
@@ -46,16 +51,29 @@ export class PlayInstrument {
   private modulation = 0;
   /** Decaying 0–1 attack pulse — published into HarmonicContext for visuals. */
   private pulse = 0;
+  /**
+   * How much of the instrument is in use, 0–1 — held notes, smoothed. The
+   * ensemble duck is proportional to this, so a single note and a two-handed
+   * chord don't move the orchestra by the same amount.
+   */
+  private energy = 0;
   private onNote: ((event: PlayNoteEvent) => void) | null = null;
   private disposeTimeouts: ReturnType<typeof setTimeout>[] = [];
-  /** Last time handed out by `at()` — see there. */
-  private lastScheduled = 0;
+  /** Keeps this instrument's events strictly ordered — see `ScheduleTime`.
+   * A keyboard hits that constraint constantly: re-striking a held key
+   * releases and re-attacks the same pitch, and swapping preset mid-chord
+   * releases the old synth in the same breath as the next note. */
+  private readonly schedule = new ScheduleTime();
 
   constructor(destination: Tone.ToneAudioNode) {
     this.filter = new Tone.Filter(this.preset.cutoff.rest, 'lowpass', -12).connect(
       destination,
     );
     this.gain = new Tone.Gain(this.preset.gain).connect(this.filter);
+    // A separate node from the preset trim so the two can't stomp each other:
+    // `gain` is which voice this is, `chordGain` is how many notes of it are
+    // sounding, and swapping preset mid-chord must not reset the second.
+    this.chordGain = new Tone.Gain(1).connect(this.gain);
     this.buildSynth();
   }
 
@@ -125,7 +143,7 @@ export class PlayInstrument {
     this.synth = null;
     if (outgoing) {
       try {
-        outgoing.releaseAll(this.at());
+        outgoing.releaseAll(this.schedule.next());
       } catch {
         /* already gone */
       }
@@ -151,15 +169,18 @@ export class PlayInstrument {
 
     const sounded = mapPlayNote(midiNote, this.ctx, this.tuning, this.octaveShift);
     const note = midiToNoteName(sounded);
-    // A light touch should still speak — this is an ambient instrument, not a
-    // piano, and a pad that only whispers below half velocity reads as broken.
-    const shaped = 0.25 + Math.max(0, Math.min(1, velocity)) * 0.75;
+    const shaped = velocityCurve(velocity);
 
     this.held.set(midiNote, { note, pedalled: false });
+    // Before the attack, not after: the trim for the chord this note is
+    // joining has to be in place by the time the note speaks, or the first
+    // moment of every added note is the un-compensated one.
+    this.applyChordTrim();
     try {
-      synth.triggerAttack(note, this.at(), shaped);
+      synth.triggerAttack(note, this.schedule.next(), shaped);
     } catch {
       this.held.delete(midiNote);
+      this.applyChordTrim();
       return;
     }
     this.pulse = Math.min(1, this.pulse + 0.35 + shaped * 0.45);
@@ -175,8 +196,11 @@ export class PlayInstrument {
       return;
     }
     this.held.delete(midiNote);
+    // The trim opens back up as the chord thins, over the same short ramp the
+    // attack side uses, so lifting a finger doesn't step the rest of the chord.
+    this.applyChordTrim();
     try {
-      this.synth?.triggerRelease(entry.note, this.at());
+      this.synth?.triggerRelease(entry.note, this.schedule.next());
     } catch {
       /* synth swapped out from under it */
     }
@@ -208,20 +232,37 @@ export class PlayInstrument {
   allNotesOff(): void {
     this.sustaining = false;
     this.held.clear();
+    // Deliberately no `applyChordTrim()`: the chord this was trimmed for is
+    // still in its release, and opening the trim back up under it would swell
+    // a chord that is supposed to be dying away. The next note-on resets it,
+    // where a fresh attack covers the move.
     try {
-      this.synth?.releaseAll(this.at());
+      this.synth?.releaseAll(this.schedule.next());
     } catch {
       /* already gone */
     }
   }
 
-  /** Decay the attack pulse. Call each engine step. */
+  /** Decay the attack pulse and advance play energy. Call each engine step. */
   update(dt: number): void {
     if (this.pulse > 0) this.pulse = Math.max(0, this.pulse - dt * 1.6);
+    this.energy = advanceEnergy(this.energy, this.held.size, dt);
   }
 
   getPulse(): number {
     return this.pulse;
+  }
+
+  /**
+   * How much of the instrument is in use, 0–1.
+   *
+   * Unlike `isPlaying()` this doesn't snap back the moment the last key
+   * lifts — it carries its own decay, which is what lets the ensemble duck
+   * be proportional and continuous rather than a switch with a hold timer
+   * bolted to it.
+   */
+  getEnergy(): number {
+    return this.energy;
   }
 
   /** True while any key is down or the pedal is holding something. */
@@ -235,6 +276,7 @@ export class PlayInstrument {
     this.allNotesOff();
     try {
       this.synth?.dispose();
+      this.chordGain.dispose();
       this.gain.dispose();
       this.filter.dispose();
     } catch {
@@ -243,31 +285,31 @@ export class PlayInstrument {
     this.synth = null;
   }
 
-  /**
-   * A strictly increasing schedule time.
-   *
-   * `Tone.now()` returns the same value for everything that happens inside one
-   * tick, and Web Audio rejects two events at the identical time on the same
-   * voice — "Start time must be strictly greater than previous start time".
-   * A keyboard hits that constantly: re-striking a held key releases and
-   * re-attacks the same pitch, and swapping preset mid-chord releases the old
-   * synth in the same breath as the next note. Nudging each event a tenth of a
-   * millisecond past the last keeps them ordered and stays far below anything
-   * anyone could hear — a hundred events in one tick add up to 10ms.
-   */
-  private at(): number {
-    const time = Math.max(Tone.now(), this.lastScheduled + 1e-4);
-    this.lastScheduled = time;
-    return time;
-  }
-
   private buildSynth(): void {
-    const synth = this.preset.create().connect(this.gain);
+    const synth = this.preset.create().connect(this.chordGain);
     synth.maxPolyphony = this.preset.maxPolyphony;
     this.synth = synth;
     this.gain.gain.rampTo(this.preset.gain, 0.08);
     this.applyBend();
     this.applyModulation();
+  }
+
+  /**
+   * Ride the polyphony trim to whatever is sounding now.
+   *
+   * Tightening has a deadline — the trim for the chord has to be in place
+   * before the chord is, so it runs inside the attack of every preset here.
+   * Opening has none, and taking it slower keeps a finger lifting off a chord
+   * from putting a step into the notes still ringing. The guard matters
+   * either way: this runs on every note-on and note-off, and a glissando
+   * would otherwise schedule a ramp per key for fractions of a decibel.
+   */
+  private applyChordTrim(): void {
+    const trim = chordTrim(this.held.size);
+    if (Math.abs(trim - this.lastChordTrim) < 0.005) return;
+    const opening = trim > this.lastChordTrim;
+    this.lastChordTrim = trim;
+    this.chordGain.gain.rampTo(trim, opening ? 0.25 : 0.05);
   }
 
   private applyBend(): void {

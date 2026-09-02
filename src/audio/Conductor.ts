@@ -59,6 +59,8 @@ function expRandom(min: number, max: number): number {
 
 export class Conductor {
   readonly harmonicField = new HarmonicField();
+  /** Voices already reported as failing — see `reportVoiceError`. */
+  private readonly reportedVoiceErrors = new Set<string>();
   readonly clock = new MusicalClock();
   interest = 0.4;
   private targetInterest = 0.4;
@@ -304,8 +306,34 @@ export class Conductor {
     this.trimExcess();
 
     for (const voice of this.voices) {
-      voice.update(dt, this.interest, this.knobs);
+      // One voice failing to schedule must not take the orchestra with it.
+      //
+      // Web Audio throws on an out-of-order event, and the throw used to
+      // escape this loop: every voice after the offending one was skipped for
+      // that step, so their levels, pans and fades stopped being written
+      // while their sound carried on. A flourish glitching in the melody
+      // register left the kit and the sub frozen mid-ramp — the bass, which
+      // had nothing to do with it, was what you heard break. Whatever else is
+      // wrong, the rest of the ensemble still gets its frame.
+      try {
+        voice.update(dt, this.interest, this.knobs);
+      } catch (err) {
+        this.reportVoiceError(voice.id, err);
+      }
     }
+  }
+
+  /**
+   * Say it once per voice, not once per frame.
+   *
+   * A voice that throws usually throws again on the very next step, and a
+   * console filling at 60Hz buries the first occurrence — which is the one
+   * that says what actually happened.
+   */
+  private reportVoiceError(id: string, err: unknown): void {
+    if (this.reportedVoiceErrors.has(id)) return;
+    this.reportedVoiceErrors.add(id);
+    console.warn(`[orchestra] voice "${id}" failed to update:`, err);
   }
 
   private onCrossfadeBloom(ctx: HarmonicContext): void {

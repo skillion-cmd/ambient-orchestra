@@ -26,7 +26,7 @@ Inspired by the idea that good ambient music flows in and out of interest within
 - **Flourishes throughout** — sparkle runs and melodic flurries recur on a cadence that ebbs and flows within each movement (denser in bloom/hang, sparser in the troughs)
 - **New textures** — a Bicep/Caribou-style felt sub **pulse** (bloom/hang) and Aphex/Nosaj-style **granular degradation** (dissolve/exhale)
 - **HRTF binaural positioning** — select voices (distant bell, harmonic ghost, sparkle, flurry) are spatialised in true 3D with graceful stereo fallback
-- **Master FX chain** — chorus, glue compression, delay, 14s reverb, stereo widener, tilt EQ, limiter
+- **Master FX chain** — chorus, glue compression, delay, 14s reverb, stereo widener, tilt EQ, 30Hz rumble filter, limiter
 - **FFT analysis** — bass / mids / highs / overall bands plus full spectrum for visual detail
 
 ### Play — the orchestra as an instrument
@@ -42,13 +42,31 @@ field, the same room, but with a polyphonic instrument at the front of it.
   each a playable reading of a voice the orchestra already has. Same timbres,
   performance envelopes: the generative versions open over two to six seconds,
   which is right for a bed that swells in and wrong for a key you press
-- **The orchestra ducks behind you** — the Conductor keeps composing, but the
-  ensemble drops about 10dB while notes are held and swells back over four
-  seconds after you stop. Playing *the orchestra*, not over a backing track
+- **The orchestra makes room where you are** — the Conductor keeps composing,
+  and the ensemble leans away in your register rather than everywhere: the
+  melody and air voices share the keybed's range and step well back, the pads
+  carrying the harmony you are playing over stay, and the sub and the beat
+  barely move, because nothing you play is down there. Playing *the orchestra*,
+  not over a backing track
+- **In proportion to what you are playing** — how far the ensemble leans away
+  tracks how much of the instrument is in use, continuously. One held note is
+  not a chord and doesn't move the room like one; the decay is slow enough that
+  the gaps between phrases don't make the orchestra surge in and out
+- **Behind / With / Front** — where the instrument sits against the ensemble.
+  One control moves both its own level and how far the orchestra leans away,
+  because those are the same decision made twice. **With** is the default: in
+  front, but inside the piece
 - **In the room, not behind its wall** — the instrument shares the delay,
-  reverb, width and tilt of the space, but joins the chain after the room
-  filter and outside the glue compressor and the session intensity arc. Walking
-  toward the doorway muffles the room; it never muffles your hands
+  reverb, width and tilt of the space, and joins the chain after the room
+  filter and outside the glue compressor, so walking toward the doorway muffles
+  the room and never muffles your hands. It does ride the session arc partly,
+  by an amount the blend sets: an instrument that held one level while the
+  piece swelled and receded around it was the one thing in the room not
+  breathing
+- **Voiced like a mix, not a monitor** — velocity has real range end to end, a
+  chord is trimmed for the notes in it so six fingers aren't six times one, and
+  the bus is level-matched against the layer buses with a shallow compressor
+  above it. Nothing here reaches for a limiter to hold itself down
 - **Works with nothing plugged in** — a QWERTY keybed on the tracker layout
   (`A`–`;` white, `W`/`E`/`T`/`Y`/`U`/`O`/`P` black, `Z`/`X` for octave) and a
   clickable on-screen keyboard, so Play needs no hardware
@@ -128,8 +146,9 @@ npm test          # run once
 npm run test:watch
 ```
 
-Unit tests cover music theory helpers, harmonic field transitions, the Play
-keybed mapping, and MIDI device profiles and learned bindings.
+Unit tests cover music theory helpers, harmonic field transitions, event
+scheduling, the Play keybed mapping and mix model, stored calibrations, and
+MIDI device profiles and learned bindings.
 
 ## Controls
 
@@ -209,11 +228,11 @@ persists across sessions.
 src/
   audio/          Conductor, ConductorSkill, HarmonicField, ConductorFx,
                   MusicalClock, Movement, LayerPresence, RoomWalk,
-                  NeighbourRoom, voices, clips
+                  NeighbourRoom, ScheduleTime, voices, clips
   visual/         Visualizer, ArtDirectorSkill, FluidField, LayerBalance,
                   ScenePalette
   visual/three/   GhostField, ExtrusionField, TrailPass, ghost/milky shaders
-  audio/          ... PlayInstrument, PlayPresets, PlayMapping
+  audio/          ... PlayInstrument, PlayPresets, PlayMapping, PlayBlend
   input/          MidiInput, MidiMap, KeyboardInput, PlayController
   ui/             Controls, SessionReadout, CymaticsOverlay, VisualScope,
                   KnobAutomator, ThemeToggle, PlayPanel
@@ -227,7 +246,11 @@ src/
 - **Swell is balance, not volume** — the ambient curves carry everything one minute and sit near-inaudible under a melody or a texture the next, a swing of about 23dB. Every layer sits on a ring the focus point can reach the edge of, so each one both takes the front and falls all the way back; nothing rests at the centre where it could never recede. The front is never empty
 - **Two rooms, always** — the neighbouring room runs its own key, its own arc and its own voices behind a wall filter. Crossing the threshold hands its key to the main room and gives the neighbour a new one, and the swap happens at the point of deepest blur so it lands inside the smear rather than as a cut
 - Voices never all play at full volume simultaneously
-- **Playing is not conducting** — the instrument takes the front of the mix and the orchestra steps back, but the orchestra never stops composing. The key you are playing in is the key the piece drifted to on its own, and it will drift again underneath you. A note already sounding keeps the pitch it was struck at; only the next one hears the new key
+- **The bottom of the mix is guarded** — the pad and melody path is highpassed at 90Hz, but the two paths that carry the actual low end, the dry sub and the dry beat, take a shortcut past it on purpose. A 30Hz rumble filter before the master limiter is what stands under *them*: sub-audible energy never arrives as a note on any speaker anyone is likely to own, but it still moves the cone, still spends headroom, and still intermodulates with what you can hear — the whole mix going gritty on the low notes rather than just the low notes going gritty. The kick sits an octave above where it started, at 37–58Hz, the same range the deep-pressure sub works in: a kick you can hear land rather than one you can only feel the speaker fail to reproduce. Measured at the output, the band below 32Hz went from 3.6dB under the audible bass to about 12dB under it, while the audible bass got slightly louder
+- **Nothing schedules at `Tone.now()`** — it is not a clock you can call twice. It reads the audio context, which advances once per render quantum, so every call inside one JavaScript turn hands back the same value — and `clockStep` deliberately runs several engine sub-steps in one turn whenever it is catching up after a stall. Two events at one time on one voice is a thrown `RangeError`, and the throw took the rest of the voice loop with it: every voice after the offending one was skipped for that step, levels and fades frozen while their sound carried on. A flourish glitching in the melody register left the kit and the sub stuck mid-ramp, so the bass was what you heard break. Voices schedule through a per-node clock that cannot repeat a time (`ScheduleTime`), and the loop survives a voice that fails anyway
+- **A `Tone.Loop` callback runs where nothing can catch it** — out in the transport's own tick, so a throw there takes the rest of that tick's scheduled events with it, whichever voice they belonged to. Two things were throwing: percussion voiced with `sustain: 0` was scheduling a release that did nothing audible and could still land after its own next attack, and a clip was ramping a filter frequency an LFO was already driving. Both are now what they should have been — attack-only drums, one writer per parameter
+- **Playing is not conducting** — the instrument takes the front of the mix and the orchestra leans away, but the orchestra never stops composing. The key you are playing in is the key the piece drifted to on its own, and it will drift again underneath you. A note already sounding keeps the pitch it was struck at; only the next one hears the new key
+- **Playing is joining, not switching on** — an instrument that entered at unity next to layer buses sitting near half, and dropped the whole ensemble 10dB the instant a key went down, is a synth over a backing track that has been told to get out of the way. Every part of the mix answer is proportional instead: the level, the register the ensemble makes room in, how far it leans, and how much of the piece's own arc the instrument rides
 - **Two creative roles:** the Conductor Skill directs the audio (intensity, stereo image, flourish cadence) and the Art Director Skill directs the visuals (fog, focus, mood, constellations) — both read the same shared harmonic context, so picture and sound stay in step
 - **Visual palette:** strict depth-pass monochrome. Light field (`#ececec`) with dark ink ghosts is the default; dark field inverts to luminous ghosts on a deep `#08080f` ground, with bodies tinted into the same blue-black family
 - **Ink-in-water:** ghosts deposit semi-transparent strokes into a fade buffer each frame; older ink slowly bleaches back toward the field color — Drift toward Mist lengthens the dissolve

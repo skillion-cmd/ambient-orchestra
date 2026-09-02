@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_KNOBS } from '../audio/types';
-import { loadStoredKnobs, loadStoredMode, storeKnobs, storeMode } from './AppMode';
+import {
+  loadStoredKnobs,
+  loadStoredMode,
+  loadStoredPlayState,
+  storeKnobs,
+  storeMode,
+  storePlayState,
+} from './AppMode';
 
 // Node has no localStorage — provide a minimal in-memory stand-in.
 class MemoryStorage {
@@ -121,5 +128,46 @@ describe('knob persistence', () => {
     const loaded = loadStoredKnobs();
     expect(loaded).not.toBeNull();
     expect('bass' in loaded!.sound).toBe(false);
+  });
+});
+
+describe('stored play state', () => {
+  it('round-trips', () => {
+    storePlayState({ presetId: 'bell', tuning: 'chromatic', octaveShift: -1, blend: 'front' });
+    expect(loadStoredPlayState()).toEqual({
+      presetId: 'bell',
+      tuning: 'chromatic',
+      octaveShift: -1,
+      blend: 'front',
+    });
+  });
+
+  it('backfills a blend saved before the control existed', () => {
+    localStorage.setItem(
+      'ao-play',
+      JSON.stringify({ presetId: 'choir', tuning: 'scale', octaveShift: 0 }),
+    );
+    expect(loadStoredPlayState()).toEqual({
+      presetId: 'choir',
+      tuning: 'scale',
+      octaveShift: 0,
+      blend: 'with',
+    });
+  });
+
+  it('backfills rather than resets when the blend is corrupt', () => {
+    localStorage.setItem(
+      'ao-play',
+      JSON.stringify({ presetId: 'choir', tuning: 'scale', octaveShift: 0, blend: 'loudest' }),
+    );
+    expect(loadStoredPlayState()?.blend).toBe('with');
+  });
+
+  it('still rejects a corrupt octave', () => {
+    localStorage.setItem(
+      'ao-play',
+      JSON.stringify({ presetId: 'choir', tuning: 'scale', octaveShift: 9, blend: 'with' }),
+    );
+    expect(loadStoredPlayState()).toBeNull();
   });
 });

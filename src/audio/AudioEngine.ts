@@ -10,14 +10,27 @@ import type { PieceRequest } from './HarmonicField';
 import { RoomWalk } from './RoomWalk';
 import { NeighbourRoom } from './NeighbourRoom';
 import { PlayInstrument } from './PlayInstrument';
+import {
+  DEFAULT_BLEND_ID,
+  duckFor,
+  findBlend,
+  instrumentLevel,
+  NO_DUCK,
+  type PlayBlend,
+} from './PlayBlend';
 
 /** Mirrors the UI's AppMode without the audio layer reaching up into it. */
 type EngineMode = 'drift' | 'calibrate' | 'play';
 
-/** ~10dB back — present as a bed, no longer competing with your hands. */
-const DUCK_FLOOR = 0.32;
-/** How long after the last note-off before the orchestra starts coming back. */
-const DUCK_HOLD_SEC = 1.2;
+/**
+ * How far the per-layer duck has to move before it is worth writing.
+ *
+ * The duck is continuous now — it tracks play energy every frame instead of
+ * flipping between two states — so without a gate this would schedule five
+ * bus ramps sixty times a second. The same reason `applyLayerPresence` has
+ * one, and the same threshold: a move this small is inaudible.
+ */
+const DUCK_EPSILON = 0.006;
 
 export class AudioEngine {
   private readonly padBus: Tone.Gain;
@@ -36,6 +49,7 @@ export class AudioEngine {
   private readonly widener: Tone.StereoWidener;
   private readonly tiltEQ: Tone.EQ3;
   private readonly highpass: Tone.Filter;
+  private readonly rumble: Tone.Filter;
   private readonly roomWall: Tone.Filter;
   private readonly roomGain: Tone.Gain;
   private readonly roomWalk = new RoomWalk();
@@ -53,14 +67,20 @@ export class AudioEngine {
   private readonly playInstrument: PlayInstrument;
   /** True while play mode owns the front of the mix. */
   private playActive = false;
+  private readonly playGlue: Tone.Compressor;
+  private blend: PlayBlend = findBlend(DEFAULT_BLEND_ID);
   /**
-   * How far the orchestra is pulled back behind the instrument. 1 = full
-   * ensemble, ~0.32 = the bed you play over. Ramped, never written directly.
+   * How far each layer is pulled back behind the instrument, 1 = untouched.
+   *
+   * Per layer rather than one number, because a uniform duck is what made
+   * playing feel like muting the orchestra: the melody and air voices are the
+   * ones sharing the instrument's register and the ones that need to move,
+   * while the pads carry the harmony you are playing over and the sub and the
+   * beat are nowhere near you. See `PlayBlend`.
    */
-  private ensembleDuck = 1;
-  private duckTarget = 1;
-  /** Seconds left before the ensemble is allowed to swell back. */
-  private duckHold = 0;
+  private ensembleDuck: LayerPresence = { ...NO_DUCK };
+  /** Instrument bus level as of the last write — see `applyPlayLevel`. */
+  private lastPlayLevel = -1;
   private readonly analyser: Tone.Analyser;
   private readonly limiter: Tone.Limiter;
   private readonly subLimiter: Tone.Limiter;
@@ -114,6 +134,21 @@ export class AudioEngine {
     this.widener = new Tone.StereoWidener(0.55);
     this.tiltEQ = new Tone.EQ3(-1, 0, 1);
     this.highpass = new Tone.Filter(90, 'highpass');
+    // The last thing before the limiter, and the only thing guarding the
+    // bottom of the mix.
+    //
+    // The 90Hz highpass above protects the pad and melody path, but the two
+    // paths carrying the actual low end — the dry sub and the dry beat — both
+    // take a shortcut past it on purpose, because a 90Hz highpass would erase
+    // what they are for. That left nothing at all below them, and sub-audible
+    // energy is not harmless: it is inaudible on every speaker anyone is
+    // likely to be using, so it never arrives as a note, but it still moves
+    // the cone, still spends headroom, and still intermodulates with what you
+    // *can* hear — the whole mix going gritty on the low notes rather than
+    // just the low notes going gritty. 30Hz sits below the deepest thing here
+    // that is meant to be heard (36Hz), so it takes only what nothing was
+    // going to reproduce.
+    this.rumble = new Tone.Filter(30, 'highpass', -24);
     this.limiter = new Tone.Limiter(-2);
     this.analyser = new Tone.Analyser('fft', 512);
 
@@ -136,7 +171,8 @@ export class AudioEngine {
     this.delay.connect(this.reverb);
     this.reverb.connect(this.widener);
     this.widener.connect(this.tiltEQ);
-    this.tiltEQ.connect(this.limiter);
+    this.tiltEQ.connect(this.rumble);
+    this.rumble.connect(this.limiter);
     this.limiter.connect(this.analyser);
     this.analyser.toDestination();
 
@@ -168,13 +204,34 @@ export class AudioEngine {
     // the glue compressor and outside the intensity gain, so it shares the
     // room's delay, reverb, width and tilt — it sounds like it is in the same
     // space — but it does not get muffled when the listener drifts toward the
-    // doorway, is not pumped by the ensemble's compressor, and is not faded
-    // out by the Conductor Skill's session arc. Your hands are not part of
-    // the piece's dynamics. It still passes the analyser, so the cymatics
-    // panel and the visual field react to what you play.
+    // doorway and is not pumped by the ensemble's compressor. It still passes
+    // the analyser, so the cymatics panel and the visual field react to what
+    // you play.
+    //
+    // Being outside the intensity gain is routing, not exemption: the session
+    // arc reaches the instrument as a level ride instead, in `applyPlayLevel`,
+    // by an amount the blend sets.
+    //
+    // Its level is a real level, set from the blend and the session arc by
+    // `applyPlayLevel`, not the unity gain the first version ran at — an
+    // instrument entering at 1.0 next to layer buses sitting near 0.5 after
+    // their own trims was most of what "loud" meant. The compressor ahead of
+    // the limiter is the rest of it: a two-handed chord used to arrive as a
+    // step into limiting, which is the harsh part, and this catches it as a
+    // gentle squeeze a few dB earlier instead. It sits high and shallow on
+    // purpose: a single note passes it untouched, so the velocity curve keeps
+    // the dynamics it just went to the trouble of restoring.
     this.playBus = new Tone.Gain(0);
+    this.playGlue = new Tone.Compressor({
+      threshold: -14,
+      ratio: 2.2,
+      attack: 0.008,
+      release: 0.24,
+      knee: 10,
+    });
     this.playLimiter = new Tone.Limiter(-6);
-    this.playBus.connect(this.playLimiter);
+    this.playBus.connect(this.playGlue);
+    this.playGlue.connect(this.playLimiter);
     this.playLimiter.connect(this.highpass);
     this.playInstrument = new PlayInstrument(this.playBus);
 
@@ -230,7 +287,7 @@ export class AudioEngine {
     this.updateRooms(dt);
     this.playInstrument.syncContext(this.conductor.getHarmonicContext());
     this.playInstrument.update(dt);
-    this.updateDuck(dt);
+    this.updateDuck();
   }
 
   /**
@@ -337,9 +394,27 @@ export class AudioEngine {
     this.playActive = active;
     if (!active) {
       this.playInstrument.allNotesOff();
-      this.duckHold = 0;
+      this.ensembleDuck = { ...NO_DUCK };
+      this.applyBusGains(1.5);
     }
-    this.playBus.gain.rampTo(active ? 1 : 0, active ? 0.15 : 0.6);
+    this.lastPlayLevel = -1;
+    this.playBus.gain.rampTo(
+      active ? instrumentLevel(this.blend, this.masterIntensity) : 0,
+      active ? 0.15 : 0.6,
+    );
+  }
+
+  /** How far forward the instrument sits, and how the orchestra answers it. */
+  setBlend(id: string): void {
+    const next = findBlend(id);
+    if (next.id === this.blend.id) return;
+    this.blend = next;
+    this.lastPlayLevel = -1;
+    if (this.playActive) this.applyPlayLevel(0.4);
+  }
+
+  getBlend(): PlayBlend {
+    return this.blend;
   }
 
   /**
@@ -349,33 +424,55 @@ export class AudioEngine {
    * and the foreground rotation, so none of the three can stomp the others —
    * the same composition the pan system uses for base pan, offset and width.
    *
-   * Only the target is written here, once per transition, and the ramp does
-   * the rest: stepping it by hand would schedule five bus ramps every frame
-   * for a move that takes under a second. Down is fast enough that the first
-   * chord is already in front. Coming back waits out a hold first, so the
-   * gaps between phrases don't make the orchestra surge in and out, and then
-   * swells over four seconds rather than snapping.
+   * It tracks play energy continuously instead of flipping between a floor
+   * and a ceiling: the instrument's own decay is what holds the orchestra
+   * back through the gaps between phrases and then lets it swell, so there is
+   * no hold timer here any more, and no moment where the bed jumps because a
+   * timer ran out. Ramps are short — the smoothing already happened upstream,
+   * in the energy, and ramping a smooth signal again only adds lag.
    */
-  private updateDuck(dt: number): void {
-    const want = this.playActive && this.playInstrument.isPlaying();
-    if (want) {
-      this.duckHold = DUCK_HOLD_SEC;
-    } else if (this.duckHold > 0) {
-      this.duckHold -= dt;
+  private updateDuck(): void {
+    const energy = this.playActive ? this.playInstrument.getEnergy() : 0;
+    const next = energy > 0 ? duckFor(this.blend, energy) : NO_DUCK;
+    const moved = (Object.keys(next) as (keyof LayerPresence)[]).some(
+      (k) => Math.abs(next[k] - this.ensembleDuck[k]) > DUCK_EPSILON,
+    );
+    if (moved) {
+      this.ensembleDuck = { ...next };
+      this.applyBusGains(0.25);
     }
-
-    const target = want || this.duckHold > 0 ? DUCK_FLOOR : 1;
-    if (target === this.duckTarget) return;
-    const opening = target > this.duckTarget;
-    this.duckTarget = target;
-    this.ensembleDuck = target;
-    this.applyBusGains(opening ? 4 : 0.25);
+    if (this.playActive) this.applyPlayLevel();
   }
 
-  /** Where the orchestra is headed — 1 = full, DUCK_FLOOR = behind the
-   * instrument. The readout reads this to show whether the bed is pulled back. */
-  getEnsembleDuck(): number {
-    return this.duckTarget;
+  /**
+   * Ride the instrument's bus with the Conductor's session arc.
+   *
+   * The first version deliberately kept the instrument outside the arc —
+   * "your hands are not part of the piece's dynamics" — and that is exactly
+   * what made it sound pasted on: the orchestra would recede into a quiet
+   * passage and the instrument would sit there at the same level, the one
+   * thing in the room not breathing. It follows the arc partially now, by an
+   * amount the blend sets, so it belongs to the piece without disappearing
+   * into it. Everything else about the routing is unchanged: still after the
+   * room wall, still outside the glue compressor, so walking toward the
+   * doorway still never muffles your hands.
+   */
+  private applyPlayLevel(rampSec = 1.2): void {
+    const level = instrumentLevel(this.blend, this.masterIntensity);
+    if (Math.abs(level - this.lastPlayLevel) < 0.004) return;
+    this.lastPlayLevel = level;
+    this.playBus.gain.rampTo(level, rampSec);
+  }
+
+  /**
+   * How far back the orchestra is being held, 0 = untouched, 1 = fully behind
+   * the instrument. The readout reads this to show whether the bed is ducked.
+   */
+  getEnsembleDuckDepth(): number {
+    const layers = Object.keys(this.ensembleDuck) as (keyof LayerPresence)[];
+    let deepest = 0;
+    for (const layer of layers) deepest = Math.max(deepest, 1 - this.ensembleDuck[layer]);
+    return deepest;
   }
 
   /** Apply autonomous Conductor directives — call each frame while running. */
@@ -538,12 +635,12 @@ export class AudioEngine {
   private applyBusGains(rampSec: number): void {
     const base = this.baseBusGains;
     const p = this.layerPresence;
-    const duck = this.ensembleDuck;
-    this.melodyBus.gain.rampTo(base.melody * p.melody * duck, rampSec);
-    this.padBus.gain.rampTo(base.pad * p.pad * duck, rampSec);
-    this.airBus.gain.rampTo(base.air * p.air * duck, rampSec);
-    this.subBus.gain.rampTo(base.sub * p.sub * duck, rampSec);
-    this.pulseBus.gain.rampTo(base.pulse * p.pulse * duck, rampSec);
+    const d = this.ensembleDuck;
+    this.melodyBus.gain.rampTo(base.melody * p.melody * d.melody, rampSec);
+    this.padBus.gain.rampTo(base.pad * p.pad * d.pad, rampSec);
+    this.airBus.gain.rampTo(base.air * p.air * d.air, rampSec);
+    this.subBus.gain.rampTo(base.sub * p.sub * d.sub, rampSec);
+    this.pulseBus.gain.rampTo(base.pulse * p.pulse * d.pulse, rampSec);
   }
 
   /** Knob-derived delay feedback — gesture restores must re-read this
