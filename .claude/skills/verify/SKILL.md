@@ -35,9 +35,9 @@ Flows that matter:
   counter prove the analyser sees a live signal.
 - Knobs: mouse-down on a `.knob-dial`, move vertically in small steps,
   mouse-up. Read back via the sibling `.knob-value` text.
-- Mode: the Drift/Calibrate toggle is `#mode-toggle`; body has
-  `data-mode`. Knob persistence writes `ao-knobs` (calibrate only,
-  debounced 500ms).
+- Mode: the Drift/Calibrate/Play toggle is `#mode-toggle` (three buttons,
+  in that order); body has `data-mode`. Knob persistence writes `ao-knobs`
+  (Calibrate and Play, debounced 500ms).
 - Right-rail toggles (`#rail-right-toggle`): theme button says the
   *destination* ("Dark field" when light), same for Field/Currents
   ("Currents" when in field mode).
@@ -52,10 +52,30 @@ Flows that matter:
   forced as each movement runs out, and shows up as `between rooms` in the
   left-rail sub-line, followed by a new movement index.
 
-- The Calibrate rail has a piece picker (`.piece-picker`, hidden in Drift):
-  a length row then an `OPEN | NIGHT | PLAY` row. Clicking Play queues the
-  choice and triggers the usual dissolve-and-skip, so allow ~25s before the
-  new piece reports in the readout.
+- The Calibrate rail has a piece picker (`.piece-picker`, hidden in Drift
+  and in Play): a length row then an `OPEN | NIGHT | PLAY` row. Clicking Play
+  queues the choice and triggers the usual dissolve-and-skip, so allow ~25s
+  before the new piece reports in the readout.
+
+- Play mode (`.play-panel`, the picker's slot, hidden in Drift and
+  Calibrate). Playwright cannot present a MIDI device, so the computer
+  keyboard is the automatable path — everything below works headless:
+  - Notes: `page.keyboard.down('a')` etc. on the tracker layout (`a s d f g
+    h j k l ;` white, `w e t y u o p` black, `z`/`x` octave). `.play-notes`
+    reports the *sounded* pitches, which in the default in-key tuning are
+    not the keys pressed — `a d g j` in G lydian gives `G4 B4 D5 F#5`.
+  - `.play-key-cap.is-held` counts the lit keys on the on-screen keyboard;
+    the caps themselves are clickable via `pointerdown` / `pointerup`.
+  - The ensemble duck shows as `.play-notes.is-ducked`, and the line reads
+    `orchestra held back` for ~1.2s after the last note-off before the
+    orchestra swells back over 4s.
+  - Preset row is `.play-presets button`, the tuning toggle and octave
+    steppers are `.play-row button`. Panel state persists to `ao-play`
+    (`{presetId, tuning, octaveShift}`); learned MIDI bindings to
+    `ao-midi-map`. Both seed cleanly via `page.addInitScript`.
+  - Scale tuning voices two octaves above `rootMidi` (the field's *bass*),
+    which keeps it within an octave of chromatic on the same key. If a change
+    makes those two jump apart, that lift is what moved.
 
 Screenshots after ~5s of runtime give the trail buffer time to develop —
 a fresh switch looks empty.
@@ -63,6 +83,13 @@ a fresh switch looks empty.
 ## Gotchas
 
 - `/favicon.ico` 404s in the console — pre-existing, ignore.
+- `D` toggles the PerfMonitor in Drift and Calibrate only: in Play it is a
+  white key, and the shortcut stands down rather than firing every time you
+  play an E. Note also that `.perf-monitor` is an empty zero-height div until
+  a frame writes into it, so assert on its presence, not `isVisible`.
+- The left rail's `.rail-data` scrolls (`min-height: 0; overflow-y: auto`) so
+  a tall panel can't walk the knob grid off the bottom. An element below the
+  fold is scrolled, not missing — `scrollIntoViewIfNeeded()` before clicking.
 - The engine no longer runs on `requestAnimationFrame` — it advances from
   the audio clock on a `setInterval`. To simulate a backgrounded tab, stub
   `window.requestAnimationFrame` so it *stores* the pending callback rather

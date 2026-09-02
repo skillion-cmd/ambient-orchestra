@@ -75,6 +75,26 @@ export class Controls {
     return this.automator.getKnobs();
   }
 
+  /**
+   * Drive one sound knob from outside — a hardware pot in Play mode.
+   *
+   * It funnels through exactly the path a mouse drag takes, `lastTouched`
+   * included, so the rail widget moves under a hardware turn and the cymatics
+   * panel echoes it the same way it echoes a drag. A hardware knob is a knob.
+   */
+  setSoundKnob(key: keyof AppKnobs['sound'], value: number): void {
+    const clamped = Math.max(0, Math.min(1, value));
+    const binding = this.bindings.find((b) => b.section === 'sound' && b.key === key);
+    binding?.knob.setValue(clamped);
+    const label = AUDIO_KNOBS.find((k) => k.key === key)?.label ?? key;
+    this.applyKnobValue('sound', key, clamped, label);
+  }
+
+  /** Current value of one sound knob — hardware soft takeover reads this. */
+  getSoundKnob(key: keyof AppKnobs['sound']): number {
+    return this.automator.getKnobs().sound[key];
+  }
+
   /** Most recently user-dragged knob — readouts echo it briefly. */
   getLastTouched(): LastTouchedKnob | null {
     return this.lastTouched;
@@ -107,7 +127,7 @@ export class Controls {
 
   /** Autonomous drift — call each frame while in Drift mode */
   update(dt: number, harmonic: HarmonicContext): void {
-    if (this.mode === 'calibrate') return;
+    if (this.mode !== 'drift') return;
     const userDragging = this.bindings.some((b) => b.knob.isDragging());
     const prev = this.automator.getKnobs();
     const next = this.automator.update(dt, harmonic, userDragging);
@@ -130,6 +150,24 @@ export class Controls {
     }
   }
 
+  /** The single write path for a knob value, whatever moved it. */
+  private applyKnobValue(
+    section: 'sound' | 'visual',
+    key: keyof AppKnobs['sound'] | keyof AppKnobs['visual'],
+    value: number,
+    label: string,
+  ): void {
+    const current = this.automator.getKnobs();
+    if (section === 'sound') {
+      current.sound[key as keyof AppKnobs['sound']] = value;
+    } else {
+      current.visual[key as keyof AppKnobs['visual']] = value;
+    }
+    this.lastTouched = { section, label, value, at: performance.now() };
+    this.automator.syncFromUser(current);
+    this.onKnobsChange(this.automator.getKnobs());
+  }
+
   private createGrid(items: KnobSpec[]): HTMLElement {
     const grid = document.createElement('div');
     grid.className = 'knob-grid';
@@ -141,20 +179,7 @@ export class Controls {
           : this.initialKnobs.visual[item.key as keyof AppKnobs['visual']];
 
       const knob = new Knob(item.label, item.left, item.right, initial, (value) => {
-        const current = this.automator.getKnobs();
-        if (item.section === 'sound') {
-          current.sound[item.key as keyof AppKnobs['sound']] = value;
-        } else {
-          current.visual[item.key as keyof AppKnobs['visual']] = value;
-        }
-        this.lastTouched = {
-          section: item.section,
-          label: item.label,
-          value,
-          at: performance.now(),
-        };
-        this.automator.syncFromUser(current);
-        this.onKnobsChange(this.automator.getKnobs());
+        this.applyKnobValue(item.section, item.key, value, item.label);
       });
 
       this.bindings.push({ section: item.section, key: item.key, knob });

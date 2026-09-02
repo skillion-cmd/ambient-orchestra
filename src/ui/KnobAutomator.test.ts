@@ -29,6 +29,7 @@ function contextAtBar(currentBar: number): HarmonicContext {
     spaceThrowGesture: 0,
     cadenceRipple: 0,
     beatPulse: 0,
+    playPulse: 0,
     groupActivity: {} as HarmonicContext['groupActivity'],
     currentBar,
     beatInBar: 0,

@@ -439,6 +439,7 @@ export class HarmonicField {
       doorwayPulse: 0,
       groupActivity: { ...EMPTY_GROUP_ACTIVITY },
       beatPulse: clock?.beatPulse ?? 0,
+      playPulse: 0,
       currentBar: clock?.currentBar ?? 0,
       beatInBar: clock?.beatInBar ?? 0,
     };
