@@ -1,3 +1,4 @@
+import { DEFAULT_BLEND_ID, isBlendId, type PlayBlendId } from '../audio/PlayBlend';
 import type { AppKnobs } from '../audio/types';
 import { DEFAULT_KNOBS } from '../audio/types';
 
@@ -23,6 +24,7 @@ export interface StoredPlayState {
   presetId: string;
   tuning: 'scale' | 'chromatic';
   octaveShift: number;
+  blend: PlayBlendId;
 }
 
 export function loadStoredPlayState(): StoredPlayState | null {
@@ -38,7 +40,11 @@ export function loadStoredPlayState(): StoredPlayState | null {
     if (tuning !== 'scale' && tuning !== 'chromatic') return null;
     if (typeof octaveShift !== 'number' || !Number.isInteger(octaveShift)) return null;
     if (octaveShift < -3 || octaveShift > 3) return null;
-    return { presetId: value.presetId, tuning, octaveShift };
+    // Backfilled rather than rejected: a calibration saved before the blend
+    // existed is still a good calibration, and dropping it would reset
+    // someone's voice and octave over a field they never chose.
+    const blend = isBlendId(value.blend) ? value.blend : DEFAULT_BLEND_ID;
+    return { presetId: value.presetId, tuning, octaveShift, blend };
   } catch {
     return null;
   }

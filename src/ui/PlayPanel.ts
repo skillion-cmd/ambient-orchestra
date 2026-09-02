@@ -1,4 +1,5 @@
 import type { HarmonicContext } from '../audio/types';
+import { PLAY_BLENDS, type PlayBlendId } from '../audio/PlayBlend';
 import type { PlayTuning } from '../audio/PlayMapping';
 import { isBlackKey, midiToNoteName } from '../audio/PlayMapping';
 import { PLAY_PRESETS } from '../audio/PlayPresets';
@@ -9,12 +10,15 @@ export interface PlayPanelState {
   presetId: string;
   tuning: PlayTuning;
   octaveShift: number;
+  blend: PlayBlendId;
 }
 
 export interface PlayPanelHandlers {
   onPreset(id: string): void;
   onTuning(tuning: PlayTuning): void;
   onOctave(shift: number): void;
+  /** How far forward the instrument sits against the orchestra. */
+  onBlend(blend: PlayBlendId): void;
   /** A click or touch on the on-screen keyboard. */
   onNoteOn(midiNote: number, velocity: number): void;
   onNoteOff(midiNote: number): void;
@@ -44,6 +48,7 @@ export class PlayPanel {
   private readonly connectButton: HTMLButtonElement;
   private readonly presetButtons = new Map<string, HTMLButtonElement>();
   private readonly tuningButtons = new Map<PlayTuning, HTMLButtonElement>();
+  private readonly blendButtons = new Map<PlayBlendId, HTMLButtonElement>();
   private readonly octaveValue: HTMLElement;
   private readonly keyElements = new Map<number, HTMLElement>();
   private readonly learnButtons = new Map<string, HTMLButtonElement>();
@@ -93,12 +98,14 @@ export class PlayPanel {
 
     this.octaveValue = document.createElement('span');
     this.element.appendChild(this.buildOctaveRow());
+    this.element.appendChild(this.buildBlendRow());
     this.element.appendChild(this.buildKeyboard());
     this.element.appendChild(this.buildLearnSection());
 
     this.syncPresets();
     this.syncTuning();
     this.syncOctave();
+    this.syncBlend();
   }
 
   getState(): PlayPanelState {
@@ -145,13 +152,20 @@ export class PlayPanel {
     }
   }
 
-  /** Called each frame — held keys, the live key signature, the duck state. */
+  /**
+   * Called each frame — held keys, the live key signature, the duck state.
+   *
+   * `duckDepth` is 0–1 rather than a flag because the duck is proportional
+   * now: the line should read as held back once the orchestra has actually
+   * moved by something you can hear, not the instant the first key goes down.
+   */
   update(
     harmonic: HarmonicContext,
     heldKeys: number[],
     soundingNotes: string[],
-    ducked: boolean,
+    duckDepth: number,
   ): void {
+    const ducked = duckDepth > 0.05;
     const held = new Set(heldKeys);
     for (const [note, element] of this.keyElements) {
       element.classList.toggle('is-held', held.has(note));
@@ -213,6 +227,41 @@ export class PlayPanel {
       row.appendChild(button);
     }
     return row;
+  }
+
+  /**
+   * Where the instrument sits in the mix.
+   *
+   * The one control the first version was missing, and the reason it could
+   * only ever be too loud or too quiet for a given listener: how far forward
+   * your hands sit against an orchestra that is still composing is a taste
+   * decision, not a constant. Each choice moves the instrument's own level
+   * and how far the ensemble leans away from it together, because those are
+   * the same decision made twice.
+   */
+  private buildBlendRow(): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'play-row play-blend';
+    for (const blend of PLAY_BLENDS) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = blend.label;
+      button.title = blend.hint;
+      button.addEventListener('click', () => {
+        this.state.blend = blend.id;
+        this.syncBlend();
+        this.handlers.onBlend(blend.id);
+      });
+      this.blendButtons.set(blend.id, button);
+      row.appendChild(button);
+    }
+    return row;
+  }
+
+  private syncBlend(): void {
+    for (const [id, button] of this.blendButtons) {
+      button.classList.toggle('is-active', id === this.state.blend);
+    }
   }
 
   private buildOctaveRow(): HTMLElement {

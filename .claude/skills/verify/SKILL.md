@@ -67,12 +67,40 @@ Flows that matter:
   - `.play-key-cap.is-held` counts the lit keys on the on-screen keyboard;
     the caps themselves are clickable via `pointerdown` / `pointerup`.
   - The ensemble duck shows as `.play-notes.is-ducked`, and the line reads
-    `orchestra held back` for ~1.2s after the last note-off before the
-    orchestra swells back over 4s.
-  - Preset row is `.play-presets button`, the tuning toggle and octave
-    steppers are `.play-row button`. Panel state persists to `ao-play`
-    (`{presetId, tuning, octaveShift}`); learned MIDI bindings to
-    `ao-midi-map`. Both seed cleanly via `page.addInitScript`.
+    `orchestra held back` while it is still leaning away — a few seconds
+    after the last note-off, since the duck follows play energy and that
+    decays rather than switching off.
+  - Preset row is `.play-presets button`; the tuning toggle, octave steppers
+    and the Behind/With/Front blend row are each a `.play-row` (`.play-blend`
+    for the last). Panel state persists to `ao-play`
+    (`{presetId, tuning, octaveShift, blend}`); learned MIDI bindings to
+    `ao-midi-map`. Both seed cleanly via `page.addInitScript`. A stored state
+    from before `blend` existed backfills rather than resetting.
+  - Restoring `ao-mode: 'play'` from storage arms the keybed on load, so a
+    seeded Play session answers typed keys without touching the mode toggle.
+
+### Verifying the mix, not just the DOM
+
+Nothing about balance is legible from the page, so the dev build hangs the
+engine on `window.__ao` (`import.meta.env.DEV` — it is not in a production
+bundle). That is the way to check a mix change:
+
+```js
+await page.evaluate(() => {
+  const e = window.__ao;
+  return { play: e.playBus.gain.value, melody: e.melodyBus.gain.value,
+           pad: e.padBus.gain.value, duck: e.getEnsembleDuckDepth() };
+});
+```
+
+`getPlayInstrument().noteOn(midi, velocity)` plays at a chosen velocity,
+which the computer keybed (fixed 0.7) and the on-screen keys (0.75) cannot.
+`setBlend('behind'|'with'|'front')` switches the balance without clicking.
+To hear one thing at a time, zero `melodyBus`/`padBus`/`airBus`/`subBus`/
+`pulseBus` and read `getSpectrum()` — but note it is normalised
+`(dB + 100) / 100`, so silence reads as a large constant, not zero. Only
+differences from a measured floor mean anything, and a 14s reverb tail keeps
+that floor moving for a while after you stop.
   - Scale tuning voices two octaves above `rootMidi` (the field's *bass*),
     which keeps it within an octave of chromatic on the same key. If a change
     makes those two jump apart, that lift is what moved.

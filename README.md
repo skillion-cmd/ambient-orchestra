@@ -42,13 +42,31 @@ field, the same room, but with a polyphonic instrument at the front of it.
   each a playable reading of a voice the orchestra already has. Same timbres,
   performance envelopes: the generative versions open over two to six seconds,
   which is right for a bed that swells in and wrong for a key you press
-- **The orchestra ducks behind you** — the Conductor keeps composing, but the
-  ensemble drops about 10dB while notes are held and swells back over four
-  seconds after you stop. Playing *the orchestra*, not over a backing track
+- **The orchestra makes room where you are** — the Conductor keeps composing,
+  and the ensemble leans away in your register rather than everywhere: the
+  melody and air voices share the keybed's range and step well back, the pads
+  carrying the harmony you are playing over stay, and the sub and the beat
+  barely move, because nothing you play is down there. Playing *the orchestra*,
+  not over a backing track
+- **In proportion to what you are playing** — how far the ensemble leans away
+  tracks how much of the instrument is in use, continuously. One held note is
+  not a chord and doesn't move the room like one; the decay is slow enough that
+  the gaps between phrases don't make the orchestra surge in and out
+- **Behind / With / Front** — where the instrument sits against the ensemble.
+  One control moves both its own level and how far the orchestra leans away,
+  because those are the same decision made twice. **With** is the default: in
+  front, but inside the piece
 - **In the room, not behind its wall** — the instrument shares the delay,
-  reverb, width and tilt of the space, but joins the chain after the room
-  filter and outside the glue compressor and the session intensity arc. Walking
-  toward the doorway muffles the room; it never muffles your hands
+  reverb, width and tilt of the space, and joins the chain after the room
+  filter and outside the glue compressor, so walking toward the doorway muffles
+  the room and never muffles your hands. It does ride the session arc partly,
+  by an amount the blend sets: an instrument that held one level while the
+  piece swelled and receded around it was the one thing in the room not
+  breathing
+- **Voiced like a mix, not a monitor** — velocity has real range end to end, a
+  chord is trimmed for the notes in it so six fingers aren't six times one, and
+  the bus is level-matched against the layer buses with a shallow compressor
+  above it. Nothing here reaches for a limiter to hold itself down
 - **Works with nothing plugged in** — a QWERTY keybed on the tracker layout
   (`A`–`;` white, `W`/`E`/`T`/`Y`/`U`/`O`/`P` black, `Z`/`X` for octave) and a
   clickable on-screen keyboard, so Play needs no hardware
@@ -129,7 +147,8 @@ npm run test:watch
 ```
 
 Unit tests cover music theory helpers, harmonic field transitions, the Play
-keybed mapping, and MIDI device profiles and learned bindings.
+keybed mapping and mix model, stored calibrations, and MIDI device profiles
+and learned bindings.
 
 ## Controls
 
@@ -213,7 +232,7 @@ src/
   visual/         Visualizer, ArtDirectorSkill, FluidField, LayerBalance,
                   ScenePalette
   visual/three/   GhostField, ExtrusionField, TrailPass, ghost/milky shaders
-  audio/          ... PlayInstrument, PlayPresets, PlayMapping
+  audio/          ... PlayInstrument, PlayPresets, PlayMapping, PlayBlend
   input/          MidiInput, MidiMap, KeyboardInput, PlayController
   ui/             Controls, SessionReadout, CymaticsOverlay, VisualScope,
                   KnobAutomator, ThemeToggle, PlayPanel
@@ -227,7 +246,8 @@ src/
 - **Swell is balance, not volume** — the ambient curves carry everything one minute and sit near-inaudible under a melody or a texture the next, a swing of about 23dB. Every layer sits on a ring the focus point can reach the edge of, so each one both takes the front and falls all the way back; nothing rests at the centre where it could never recede. The front is never empty
 - **Two rooms, always** — the neighbouring room runs its own key, its own arc and its own voices behind a wall filter. Crossing the threshold hands its key to the main room and gives the neighbour a new one, and the swap happens at the point of deepest blur so it lands inside the smear rather than as a cut
 - Voices never all play at full volume simultaneously
-- **Playing is not conducting** — the instrument takes the front of the mix and the orchestra steps back, but the orchestra never stops composing. The key you are playing in is the key the piece drifted to on its own, and it will drift again underneath you. A note already sounding keeps the pitch it was struck at; only the next one hears the new key
+- **Playing is not conducting** — the instrument takes the front of the mix and the orchestra leans away, but the orchestra never stops composing. The key you are playing in is the key the piece drifted to on its own, and it will drift again underneath you. A note already sounding keeps the pitch it was struck at; only the next one hears the new key
+- **Playing is joining, not switching on** — an instrument that entered at unity next to layer buses sitting near half, and dropped the whole ensemble 10dB the instant a key went down, is a synth over a backing track that has been told to get out of the way. Every part of the mix answer is proportional instead: the level, the register the ensemble makes room in, how far it leans, and how much of the piece's own arc the instrument rides
 - **Two creative roles:** the Conductor Skill directs the audio (intensity, stereo image, flourish cadence) and the Art Director Skill directs the visuals (fog, focus, mood, constellations) — both read the same shared harmonic context, so picture and sound stay in step
 - **Visual palette:** strict depth-pass monochrome. Light field (`#ececec`) with dark ink ghosts is the default; dark field inverts to luminous ghosts on a deep `#08080f` ground, with bodies tinted into the same blue-black family
 - **Ink-in-water:** ghosts deposit semi-transparent strokes into a fade buffer each frame; older ink slowly bleaches back toward the field color — Drift toward Mist lengthens the dissolve
