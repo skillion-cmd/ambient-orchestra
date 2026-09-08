@@ -586,6 +586,24 @@ body[data-mode='calibrate'] .play-panel {
   color: var(--ao-text-muted);
 }
 
+/* The follow readout is a whisper until the ensemble actually acts on you,
+   so it reports the slow half of the loop without competing with the notes
+   above it for the glance mid-phrase. */
+.play-follow {
+  min-height: 12px;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+  color: var(--ao-text-muted);
+  opacity: 0.75;
+  transition: opacity 220ms ease, color 220ms ease;
+}
+
+.play-follow.is-taken {
+  color: var(--ao-text);
+  opacity: 1;
+}
+
 .play-panel button {
   font: inherit;
   font-size: 9px;

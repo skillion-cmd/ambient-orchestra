@@ -1,11 +1,14 @@
 import * as Tone from 'tone';
 import { euclidean } from './Euclidean';
 import {
+  brightnessForFunction,
+  functionForDegrees,
   generatePhrase,
   melodyDurationBeats,
   pickInitialChord,
   pickNextChord,
   pickPhraseType,
+  voicingFromDegrees,
 } from './MusicTheory';
 import {
   EPIC_SPACING,
@@ -68,6 +71,10 @@ export interface HarmonicSeed {
   mode: string;
 }
 
+function sameDegrees(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((d, i) => d === b[i]);
+}
+
 function isRoot(value: string): value is (typeof ROOTS)[number] {
   return (ROOTS as readonly string[]).includes(value);
 }
@@ -114,6 +121,26 @@ export class HarmonicField {
   private requestedPiece: PieceRequest | null = null;
   private pendingTransitionBloom = false;
   private pendingPhraseCadence: MelodyPhraseType | null = null;
+  /**
+   * A chord the player is holding — see `followChord`. Standing, not
+   * consumed: as long as the shape is held it is the lead, and `bars` counts
+   * how many bar lines it has survived so the ensemble knows when to turn.
+   */
+  private lead: {
+    degrees: number[];
+    /** Signature of the shape, for noticing when the hands move to a new one. */
+    key: string;
+    /** Bar lines this shape has stood through, once settled. */
+    bars: number;
+    /** Bars to wait before taking it — the blend's patience. */
+    withinBars: number;
+    /** True once the shape has been held long enough to count as a statement. */
+    settled: boolean;
+  } | null = null;
+  /** A phrase the player finished, waiting for the melody voice to answer. */
+  private answer: number[] | null = null;
+  /** True while the chord now sounding came from the keybed, not the walk. */
+  private followingPlayer = false;
 
   constructor() {
     // The dev overrides have to reach the first movement too, or verifying a
@@ -171,6 +198,13 @@ export class HarmonicField {
       this.euclideanRotation =
         (this.euclideanRotation + 1 + Math.floor(knobs.entropy * 2)) % 8;
       this.melodyAccentPattern = euclidean(3, 8, this.euclideanRotation);
+      // The bar is the grid a held chord is answered on. Phrase boundaries —
+      // where the walk changes chord on its own — turned out to be 11 to 35
+      // seconds apart, which is far longer than anyone holds a shape waiting
+      // to hear whether it landed: at that spacing even Front routinely never
+      // answered at all. A bar is about four seconds, so the ensemble arrives
+      // while your hands are still down, and still arrives *on* something.
+      this.takeLead(true);
     }
 
     if (this.transitioning) {
@@ -243,6 +277,59 @@ export class HarmonicField {
   /** Jump to a specific phase (used for dissolve bridge) */
   jumpToPhase(phase: MovementPhase): MovementPhase {
     return this.movement.jumpToPhase(phase);
+  }
+
+  /**
+   * Offer the field a chord the player is holding.
+   *
+   * Deliberately not a setter for `chordDegrees`. The ensemble comes round on
+   * a bar line, `withinBars` of them after the shape settles — so an indicated
+   * chord is arrived at, in time, by everyone at once, instead of the beds
+   * lurching mid-phrase under your fingers. That lag is the point: it is what
+   * makes this feel like conducting rather than playing a very large keyboard.
+   *
+   * `settled` is the instrument's judgement that this is a statement rather
+   * than a note passed through on the way somewhere else; the bar count only
+   * runs while it holds. Moving to a different shape restarts it. An empty
+   * `degrees` clears the lead — nothing is being asked for.
+   */
+  followChord(degrees: number[], settled: boolean, withinBars: number): void {
+    if (degrees.length === 0) {
+      this.lead = null;
+      return;
+    }
+    const key = degrees.join(',');
+    if (this.lead?.key === key) {
+      this.lead.settled = settled;
+      this.lead.withinBars = withinBars;
+      return;
+    }
+    this.lead = { degrees: [...degrees], key, bars: 0, withinBars, settled };
+  }
+
+  /**
+   * Hand the melody voice a phrase the player just finished, for it to answer.
+   *
+   * It arrives as a stored hook and a forced `recall`, which is the machinery
+   * the field already uses to bring its own hooks back — so what comes back is
+   * your line as the orchestra would have played it, cut and re-timed to the
+   * phase it lands in, rather than a recording of you played back.
+   */
+  answerPhrase(degrees: number[]): void {
+    if (degrees.length === 0) return;
+    this.answer = [...degrees];
+  }
+
+  /** True while the chord the ensemble is voicing came from the keybed. */
+  isFollowingPlayer(): boolean {
+    return this.followingPlayer;
+  }
+
+  /** Leaving play mode — the ensemble stops taking direction. */
+  clearPlayerLead(): void {
+    this.lead = null;
+    this.answer = null;
+    this.followingPlayer = false;
   }
 
   /**
@@ -371,9 +458,24 @@ export class HarmonicField {
     this.melodyIndex = (this.melodyIndex + 1) % this.melodyDegrees.length;
     this.accentStep++;
 
+    // Everything below is a phrase boundary decision — where the walk changes
+    // chord or phrase on its own.
+    if (this.melodyIndex !== 0) return;
+
+    // An answer jumps the queue. A reply that only arrives on a dice roll
+    // isn't a conversation, and the player has already stopped playing and is
+    // waiting to hear whether anything was listening.
+    if (this.takeAnswer()) return;
+
+    // A lead whose wait is already up gets first refusal here, so a boundary
+    // arriving under a held chord re-states it rather than letting the walk
+    // choose something else and quietly take the ensemble back off you. It
+    // cannot bring a lead forward — only a bar line advances the count.
+    if (this.takeLead(false)) return;
+
+    const scaleLen = MODE_SCALES[this.mode]!.length;
     const repeatChance = 0.25 + knobs.memory * 0.45;
-    if (this.melodyIndex === 0 && Math.random() < repeatChance) {
-      const scaleLen = MODE_SCALES[this.mode]!.length;
+    if (Math.random() < repeatChance) {
       if (Math.random() < knobs.memory * 0.5 && this.storedHook) {
         this.melodyPhraseType = 'recall';
         this.melodyDegrees = generatePhrase(scaleLen, 'recall', this.storedHook);
@@ -389,13 +491,78 @@ export class HarmonicField {
         this.storedHook = [...this.melodyDegrees.slice(0, 4)];
       }
       this.pendingPhraseCadence = this.melodyPhraseType;
-    } else if (this.melodyIndex === 0) {
-      const next = pickNextChord(this.chordFunction, this.movement.phase, knobs.entropy);
-      this.chordDegrees = next.degrees;
-      this.chordFunction = next.fn;
-      this.brightness = next.brightness;
-      this.pendingPhraseCadence = 'drift';
+      return;
     }
+
+    const next = pickNextChord(this.chordFunction, this.movement.phase, knobs.entropy);
+    this.followingPlayer = false;
+    this.chordDegrees = next.degrees;
+    this.chordFunction = next.fn;
+    this.brightness = next.brightness;
+    this.pendingPhraseCadence = 'drift';
+  }
+
+  /**
+   * Move the ensemble onto the chord the player is holding once its wait is
+   * up. Returns whether the lead now owns the chord.
+   *
+   * Counted in bar lines, so the blend reads as how quickly the ensemble comes
+   * round: Front turns on the next one, Behind lets the walk have a few of its
+   * own first. Re-taking a chord it is already on is a no-op, so a standing
+   * lead simply holds the ensemble there.
+   *
+   * `countBar` distinguishes the two places this is called from. A bar line
+   * advances the count; a phrase boundary only asks whether the wait is
+   * already up, so a lead cannot be hurried along by the walk happening to
+   * reach a boundary early.
+   *
+   * The lead stays standing after it is taken. Keeping a shape held keeps the
+   * ensemble on it, which is how you hold the orchestra somewhere; letting go
+   * hands the walk back its own next move from wherever you left it, since
+   * `chordFunction` is written either way.
+   */
+  private takeLead(countBar: boolean): boolean {
+    const lead = this.lead;
+    if (!lead || !lead.settled) return false;
+    if (countBar) lead.bars++;
+    if (lead.bars < lead.withinBars) return false;
+
+    const scaleLen = MODE_SCALES[this.mode]!.length;
+    const degrees = voicingFromDegrees(lead.degrees, scaleLen);
+
+    // Holding a shape means this fires on every bar from here on, so the
+    // ensemble already being on the chord has to be a no-op rather than a
+    // chord change — re-writing it would fire a cadence ripple every bar for
+    // as long as your hands stayed down.
+    this.followingPlayer = true;
+    if (sameDegrees(degrees, this.chordDegrees)) return true;
+
+    const fn = functionForDegrees(degrees, scaleLen);
+    this.chordDegrees = degrees;
+    this.chordFunction = fn;
+    this.brightness = brightnessForFunction(fn);
+    this.pendingPhraseCadence = 'drift';
+    return true;
+  }
+
+  /**
+   * Take a finished player phrase as the next melody, if one is waiting.
+   *
+   * It becomes the stored hook as well as the phrase, so the line keeps
+   * surfacing later the way the field's own hooks do — the orchestra doesn't
+   * just answer you once, it remembers what you played.
+   */
+  private takeAnswer(): boolean {
+    const answer = this.answer;
+    if (!answer) return false;
+    this.answer = null;
+    const scaleLen = MODE_SCALES[this.mode]!.length;
+    this.storedHook = answer.slice(0, 4).map((d) => ((d % scaleLen) + scaleLen) % scaleLen);
+    this.melodyPhraseType = 'recall';
+    this.melodyDegrees = generatePhrase(scaleLen, 'recall', this.storedHook);
+    this.melodyNoteDurationBeats = melodyDurationBeats('recall', this.movement.phase);
+    this.pendingPhraseCadence = 'recall';
+    return true;
   }
 
   private buildContext(

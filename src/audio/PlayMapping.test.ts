@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isBlackKey, mapPlayNote, midiToNoteName, REFERENCE_MIDI } from './PlayMapping';
+import {
+  degreeForSounded,
+  isBlackKey,
+  mapPlayNote,
+  midiToNoteName,
+  REFERENCE_MIDI,
+} from './PlayMapping';
 import { MODE_SCALES } from './types';
 import type { HarmonicContext } from './types';
 
@@ -108,5 +114,40 @@ describe('PlayMapping', () => {
     expect(midiToNoteName(60)).toBe('C4');
     expect(midiToNoteName(61)).toBe('C#4');
     expect(midiToNoteName(21)).toBe('A0');
+  });
+});
+
+describe('degreeForSounded', () => {
+  it('reads back the degree a scale-tuned key sounded', () => {
+    // The round trip that matters: what the ensemble hears has to be the
+    // degree the keybed just played. The white keys from middle C up walk
+    // the scale in order, so their ordinal is the degree they should map to.
+    const c = ctx('lydian');
+    const whiteKeys = [60, 62, 64, 65, 67, 69, 71];
+    for (const [degree, key] of whiteKeys.entries()) {
+      expect(isBlackKey(key)).toBe(false);
+      expect(degreeForSounded(mapPlayNote(key, c, 'scale'), c)).toBe(degree);
+    }
+  });
+
+  it('is octave-blind — the same pitch class is the same degree', () => {
+    const c = ctx('dreamMinor');
+    const low = c.rootMidi + c.scale[2]!;
+    expect(degreeForSounded(low, c)).toBe(2);
+    expect(degreeForSounded(low + 12, c)).toBe(2);
+    expect(degreeForSounded(low - 24, c)).toBe(2);
+  });
+
+  it('snaps a chromatic passing tone to the degree it passed', () => {
+    // Pentatonic leaves a real gap above its third degree, so the semitone
+    // above it is unambiguously nearer the degree it came from.
+    const c = ctx('pentatonic');
+    const degree = c.rootMidi + c.scale[2]!;
+    expect(degreeForSounded(degree + 1, c)).toBe(2);
+  });
+
+  it('survives an empty scale', () => {
+    const c = { scale: [], rootMidi: 60 } as unknown as HarmonicContext;
+    expect(degreeForSounded(64, c)).toBe(0);
   });
 });

@@ -106,3 +106,32 @@ export function midiToNoteName(midiNote: number): string {
   const octave = Math.floor(clamped / 12) - 1;
   return `${NOTE_NAMES[pitchClass]!}${octave}`;
 }
+
+/**
+ * Which scale degree a sounded note lands on.
+ *
+ * The inverse of what `mapPlayNote` just did, and it has to be computed from
+ * the *sounded* pitch rather than the key pressed, because those are different
+ * things in scale tuning and because chromatic tuning has no degree at all
+ * until you ask what the note is nearest to. Black keys in scale tuning are
+ * passing tones a semitone off a degree; they snap back to the degree they
+ * passed, which is the right answer for a listening ensemble — you played
+ * through it, not at it.
+ */
+export function degreeForSounded(soundedMidi: number, ctx: HarmonicContext): number {
+  const scale = ctx.scale;
+  if (scale.length === 0) return 0;
+  const pitchClass = (((soundedMidi - ctx.rootMidi) % 12) + 12) % 12;
+  let best = 0;
+  let bestDistance = Infinity;
+  for (let i = 0; i < scale.length; i++) {
+    const degreeClass = ((scale[i]! % 12) + 12) % 12;
+    const raw = Math.abs(degreeClass - pitchClass);
+    const distance = Math.min(raw, 12 - raw);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = i;
+    }
+  }
+  return best;
+}

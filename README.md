@@ -42,6 +42,22 @@ field, the same room, but with a polyphonic instrument at the front of it.
   each a playable reading of a voice the orchestra already has. Same timbres,
   performance envelopes: the generative versions open over two to six seconds,
   which is right for a bed that swells in and wrong for a key you press
+- **The orchestra follows you** — hold a shape and the ensemble comes round to
+  it: the pads and beds re-voice onto the chord you are holding, on a bar line,
+  a few bars after your hands settle. It arrives *in time* rather than the
+  instant you press, so the whole ensemble turns together instead of the beds
+  lurching under your fingers, and the panel says where the move has got to
+  (`ensemble listening` → `holding — waiting for the bar` → `ensemble took your
+  chord`) so the wait reads as the orchestra taking your cue rather than as
+  nothing happening. Hold one note and it voices a triad on that degree; hold a
+  shape and it takes the shape. Passing notes never count — the wait restarts
+  every time the held shape changes, so a run through a chord on the way
+  somewhere else is never mistaken for an instruction
+- **And it answers you** — play a phrase, stop, and the melody voice picks your
+  line up at its next boundary and plays it back as a recall: cut and re-timed
+  to the phase it lands in, in the ensemble's own voice, rather than a
+  recording of you played back. It keeps it as a stored hook afterwards, so
+  what you played resurfaces later the way the field's own hooks do
 - **The orchestra makes room where you are** — the Conductor keeps composing,
   and the ensemble leans away in your register rather than everywhere: the
   melody and air voices share the keybed's range and step well back, the pads
@@ -53,9 +69,12 @@ field, the same room, but with a polyphonic instrument at the front of it.
   not a chord and doesn't move the room like one; the decay is slow enough that
   the gaps between phrases don't make the orchestra surge in and out
 - **Behind / With / Front** — where the instrument sits against the ensemble.
-  One control moves both its own level and how far the orchestra leans away,
-  because those are the same decision made twice. **With** is the default: in
-  front, but inside the piece
+  One control moves its level, how far the orchestra leans away, *and* how many
+  bars it takes to come round to a chord you are holding, because those are the
+  same decision made three times: how much of this piece is yours. Front turns
+  on the next bar (~2s in practice), With takes two (~10s), Behind takes four
+  (~21s) and lets the walk make its own moves in between. **With** is the
+  default: in front, but inside the piece
 - **In the room, not behind its wall** — the instrument shares the delay,
   reverb, width and tilt of the space, and joins the chain after the room
   filter and outside the glue compressor, so walking toward the doorway muffles

@@ -289,6 +289,7 @@ function loop(now: number): void {
         instrument.getHeldKeys(),
         instrument.getSoundingNotes(),
         audioEngine.getEnsembleDuckDepth(),
+        audioEngine.getPlayFollow(),
       );
     }
     visualScope.update(visualReadout, controls.getKnobs().visual, lastArt, harmonic);

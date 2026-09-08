@@ -42,31 +42,49 @@ export interface PlayBlend {
   arcFollow: number;
   /** Where each layer sits when you are playing your hardest. */
   floor: LayerPresence;
+  /**
+   * How many bars the ensemble takes to come round to a chord you are holding.
+   *
+   * The same question as the level and the duck, asked a third time: how much
+   * of this piece is yours. Front is a tight ensemble that turns on the next
+   * bar; Behind takes its time, and the walk gets to make its own moves in the
+   * meantime.
+   *
+   * A count of bars rather than odds per bar, which is what this was first:
+   * rolling a probability made the wait wander between four and twenty-four
+   * seconds for the *same* setting, and a control you cannot predict is not a
+   * control. Nothing musical was being bought with that randomness — the
+   * Conductor is already the unpredictable half of this arrangement.
+   */
+  followBars: number;
 }
 
 export const PLAY_BLENDS: PlayBlend[] = [
   {
     id: 'behind',
     label: 'Behind',
-    hint: 'play inside the ensemble — it barely moves for you',
+    hint: 'play inside the ensemble — it barely moves, and barely follows',
     level: 0.34,
     arcFollow: 0.62,
+    followBars: 4,
     floor: { melody: 0.72, air: 0.7, pad: 0.92, sub: 1, pulse: 0.96 },
   },
   {
     id: 'with',
     label: 'With',
-    hint: 'play with the ensemble — it makes room in your register',
+    hint: 'play with the ensemble — it makes room, and takes your chords',
     level: 0.52,
     arcFollow: 0.45,
+    followBars: 2,
     floor: { melody: 0.44, air: 0.42, pad: 0.74, sub: 0.94, pulse: 0.88 },
   },
   {
     id: 'front',
     label: 'Front',
-    hint: 'play over the ensemble — it drops well back behind you',
+    hint: 'play over the ensemble — it drops back and follows your hands',
     level: 0.75,
     arcFollow: 0.22,
+    followBars: 1,
     floor: { melody: 0.22, air: 0.2, pad: 0.5, sub: 0.82, pulse: 0.7 },
   },
 ];
