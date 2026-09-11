@@ -1,7 +1,13 @@
 import * as Tone from 'tone';
 import { advanceEnergy, chordTrim, velocityCurve } from './PlayBlend';
 import { ScheduleTime } from './ScheduleTime';
-import { mapPlayNote, midiToNoteName, type PlayTuning } from './PlayMapping';
+import { PlayIntent } from './PlayIntent';
+import {
+  degreeForSounded,
+  mapPlayNote,
+  midiToNoteName,
+  type PlayTuning,
+} from './PlayMapping';
 import { DEFAULT_PRESET_ID, findPreset, type PlayPreset } from './PlayPresets';
 import type { HarmonicContext } from './types';
 
@@ -58,6 +64,12 @@ export class PlayInstrument {
    */
   private energy = 0;
   private onNote: ((event: PlayNoteEvent) => void) | null = null;
+  /**
+   * What the hands are asking the orchestra for. The instrument keeps it fed
+   * because this is where the notes actually are; who listens to it, and how
+   * hard, is the engine's business — see `PlayIntent`.
+   */
+  private readonly intent = new PlayIntent();
   private disposeTimeouts: ReturnType<typeof setTimeout>[] = [];
   /** Keeps this instrument's events strictly ordered — see `ScheduleTime`.
    * A keyboard hits that constraint constantly: re-striking a held key
@@ -89,6 +101,11 @@ export class PlayInstrument {
 
   getPreset(): PlayPreset {
     return this.preset;
+  }
+
+  /** The chord and phrase readings the ensemble follows. */
+  getIntent(): PlayIntent {
+    return this.intent;
   }
 
   getTuning(): PlayTuning {
@@ -139,6 +156,7 @@ export class PlayInstrument {
     const outgoing = this.synth;
     const tail = this.preset.releaseSec;
     this.held.clear();
+    this.intent.clear();
     this.preset = next;
     this.synth = null;
     if (outgoing) {
@@ -172,6 +190,7 @@ export class PlayInstrument {
     const shaped = velocityCurve(velocity);
 
     this.held.set(midiNote, { note, pedalled: false });
+    this.intent.noteOn(midiNote, degreeForSounded(sounded, this.ctx));
     // Before the attack, not after: the trim for the chord this note is
     // joining has to be in place by the time the note speaks, or the first
     // moment of every added note is the un-compensated one.
@@ -180,6 +199,7 @@ export class PlayInstrument {
       synth.triggerAttack(note, this.schedule.next(), shaped);
     } catch {
       this.held.delete(midiNote);
+      this.intent.noteOff(midiNote);
       this.applyChordTrim();
       return;
     }
@@ -196,6 +216,7 @@ export class PlayInstrument {
       return;
     }
     this.held.delete(midiNote);
+    this.intent.noteOff(midiNote);
     // The trim opens back up as the chord thins, over the same short ramp the
     // attack side uses, so lifting a finger doesn't step the rest of the chord.
     this.applyChordTrim();
@@ -232,6 +253,7 @@ export class PlayInstrument {
   allNotesOff(): void {
     this.sustaining = false;
     this.held.clear();
+    this.intent.clear();
     // Deliberately no `applyChordTrim()`: the chord this was trimmed for is
     // still in its release, and opening the trim back up under it would swell
     // a chord that is supposed to be dying away. The next note-on resets it,
@@ -247,6 +269,7 @@ export class PlayInstrument {
   update(dt: number): void {
     if (this.pulse > 0) this.pulse = Math.max(0, this.pulse - dt * 1.6);
     this.energy = advanceEnergy(this.energy, this.held.size, dt);
+    this.intent.update(dt);
   }
 
   getPulse(): number {

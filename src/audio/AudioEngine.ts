@@ -287,6 +287,7 @@ export class AudioEngine {
     this.updateRooms(dt);
     this.playInstrument.syncContext(this.conductor.getHarmonicContext());
     this.playInstrument.update(dt);
+    this.updateFollow();
     this.updateDuck();
   }
 
@@ -394,6 +395,7 @@ export class AudioEngine {
     this.playActive = active;
     if (!active) {
       this.playInstrument.allNotesOff();
+      this.conductor.harmonicField.clearPlayerLead();
       this.ensembleDuck = { ...NO_DUCK };
       this.applyBusGains(1.5);
     }
@@ -415,6 +417,58 @@ export class AudioEngine {
 
   getBlend(): PlayBlend {
     return this.blend;
+  }
+
+  /**
+   * What the ensemble has heard, for the panel to say out loud.
+   *
+   * The follow is a slow loop by design — you hold a shape, and the orchestra
+   * takes it at its own next boundary, which may be seconds away. Without a
+   * readout that lag is indistinguishable from nothing happening, and the
+   * feature only exists if you can tell it is there.
+   *
+   * `confidence` is how settled the shape is, *not* the blend-weighted odds
+   * of it being taken. The panel is reporting what your hands are doing, and
+   * a fully held chord has to read as fully held under every blend — weighting
+   * it here would mean Behind could never show a settled shape at all.
+   */
+  getPlayFollow(): { confidence: number; taken: boolean } {
+    if (!this.playActive) return { confidence: 0, taken: false };
+    const chord = this.playInstrument.getIntent().readChord();
+    return {
+      confidence: chord?.confidence ?? 0,
+      taken: this.conductor.harmonicField.isFollowingPlayer(),
+    };
+  }
+
+  /**
+   * Hand the field what the hands are asking for.
+   *
+   * The other half of the duck, and the more interesting one. Ducking is the
+   * orchestra getting out of your way; this is the orchestra doing what you
+   * indicated — the chord you are holding taken at its own next boundary, the
+   * phrase you just finished answered by the melody voice. Nothing here
+   * schedules a note or overrides the Conductor: it offers, and the field
+   * decides, which is why the ensemble still sounds like itself while it
+   * follows you.
+   *
+   * Gated on the blend, so how much of the piece is yours is one decision
+   * made in one place — see `PlayBlend.follow`.
+   */
+  private updateFollow(): void {
+    if (!this.playActive) return;
+    const field = this.conductor.harmonicField;
+    const intent = this.playInstrument.getIntent();
+
+    const chord = intent.readChord();
+    if (chord) {
+      field.followChord(chord.degrees, chord.confidence >= 1, this.blend.followBars);
+    } else {
+      field.followChord([], false, this.blend.followBars);
+    }
+
+    const phrase = intent.takePhrase();
+    if (phrase) field.answerPhrase(phrase);
   }
 
   /**

@@ -45,6 +45,7 @@ export class PlayPanel {
   private readonly deviceLine: HTMLElement;
   private readonly keyLine: HTMLElement;
   private readonly noteLine: HTMLElement;
+  private readonly followLine: HTMLElement;
   private readonly connectButton: HTMLButtonElement;
   private readonly presetButtons = new Map<string, HTMLButtonElement>();
   private readonly tuningButtons = new Map<PlayTuning, HTMLButtonElement>();
@@ -56,6 +57,7 @@ export class PlayPanel {
   private learning: string | null = null;
   private lastKeyLine = '';
   private lastNoteLine = '';
+  private lastFollowLine = '';
 
   constructor(
     initial: PlayPanelState,
@@ -95,6 +97,11 @@ export class PlayPanel {
     this.noteLine = document.createElement('div');
     this.noteLine.className = 'play-notes';
     this.element.appendChild(this.noteLine);
+
+    // Directly under what you are playing, because it is the answer to it.
+    this.followLine = document.createElement('div');
+    this.followLine.className = 'play-follow';
+    this.element.appendChild(this.followLine);
 
     this.octaveValue = document.createElement('span');
     this.element.appendChild(this.buildOctaveRow());
@@ -164,6 +171,7 @@ export class PlayPanel {
     heldKeys: number[],
     soundingNotes: string[],
     duckDepth: number,
+    follow: { confidence: number; taken: boolean },
   ): void {
     const ducked = duckDepth > 0.05;
     const held = new Set(heldKeys);
@@ -190,6 +198,32 @@ export class PlayPanel {
       this.lastNoteLine = sounding;
     }
     this.noteLine.classList.toggle('is-ducked', ducked);
+    this.renderFollow(follow);
+  }
+
+  /**
+   * Say where the chord you are holding has got to.
+   *
+   * Three states, and they are the three the loop actually has: nothing being
+   * asked for, a shape settling into one, and the ensemble having taken it.
+   * The middle one matters most — it is the beat where you are holding a chord
+   * and the orchestra has not moved yet, which without a word on screen reads
+   * as the feature being broken rather than as the ensemble waiting for its
+   * bar.
+   */
+  private renderFollow(follow: { confidence: number; taken: boolean }): void {
+    const text = follow.taken
+      ? 'ensemble took your chord'
+      : follow.confidence >= 0.999
+        ? 'holding — waiting for the bar'
+        : follow.confidence > 0
+          ? 'ensemble listening'
+          : '';
+    if (text !== this.lastFollowLine) {
+      this.followLine.textContent = text;
+      this.lastFollowLine = text;
+    }
+    this.followLine.classList.toggle('is-taken', follow.taken);
   }
 
   private buildPresetRows(): HTMLElement {

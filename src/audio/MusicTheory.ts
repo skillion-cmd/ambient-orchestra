@@ -105,7 +105,7 @@ export function pickNextChord(
   };
 }
 
-function brightnessForFunction(fn: ChordFunction): number {
+export function brightnessForFunction(fn: ChordFunction): number {
   switch (fn) {
     case 'tonic':
       return 0.85;
@@ -115,6 +115,51 @@ function brightnessForFunction(fn: ChordFunction): number {
       return 0.7;
     case 'color':
       return 0.55;
+  }
+}
+
+/**
+ * Fold the degrees a player is holding into a voicing the ensemble can carry.
+ *
+ * Held notes are whatever the hands happened to be doing: five of them, three
+ * octaves apart, half of them the same pitch class. The beds voice
+ * `chordDegrees` directly, so what goes in has to be a chord rather than a
+ * transcript — distinct scale degrees, lowest first, capped at four. Degrees
+ * are left un-wrapped: `noteFromDegree` takes them modulo the scale, so a
+ * triad built on the fifth stays the right triad and simply voices closed.
+ */
+export function voicingFromDegrees(degrees: number[], scaleLen: number): number[] {
+  if (scaleLen <= 0 || degrees.length === 0) return [0, 2, 4];
+  const distinct = [
+    ...new Set(degrees.map((d) => ((d % scaleLen) + scaleLen) % scaleLen)),
+  ].sort((a, b) => a - b);
+  if (distinct.length === 1) {
+    const root = distinct[0]!;
+    return [root, root + 2, root + 4];
+  }
+  return distinct.slice(0, 4);
+}
+
+/**
+ * What a voicing is doing harmonically, read from the degree it sits on.
+ *
+ * The Conductor's Markov walk moves between functions rather than chords, so
+ * a chord arriving from the keybed has to name its function or the next
+ * machine-chosen chord would be picking its transition from whatever the
+ * function happened to be several chords ago.
+ */
+export function functionForDegrees(degrees: number[], scaleLen: number): ChordFunction {
+  if (scaleLen <= 0 || degrees.length === 0) return 'color';
+  const root = ((degrees[0]! % scaleLen) + scaleLen) % scaleLen;
+  switch (root) {
+    case 0:
+      return 'tonic';
+    case 3:
+      return 'subdominant';
+    case 4:
+      return 'dominant';
+    default:
+      return 'color';
   }
 }
 
