@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { AudioFeatures, HarmonicContext, VisualKnobs } from '../../audio/types';
 import { getThemePalette, type SceneTheme } from '../ScenePalette';
 import type { FieldDrive } from '../FieldDrive';
+import { moodChroma } from '../Chroma';
 import { applyGhostTheme, createGhostMaterial, type GhostMaterial } from '../three/ghostMaterial';
 import {
   createFlowField,
@@ -80,7 +81,6 @@ export class CurrentsField {
   /** How far the phrase-closing band has travelled across the map. */
   private rippleRadius = 0;
   private lastRipple = 0;
-  private readonly tintedFog = new THREE.Color();
 
   constructor(parent: THREE.Object3D, theme: SceneTheme = 'light') {
     this.theme = theme;
@@ -179,11 +179,7 @@ export class CurrentsField {
       0.46 * sizeMul * (0.7 + knobs.grain * 0.5) * (1 - drive.inhale * 0.2);
     mat.uAlpha.value = (dark ? 0.3 : 0.28) * alphaMul;
     mat.uFogDensity.value = (dark ? 0.036 : 0.032) * drive.fog;
-    this.tintedFog.copy(getThemePalette(this.theme).ghostFog);
-    const tint = drive.mood * 0.04;
-    this.tintedFog.r = Math.max(0, Math.min(1, this.tintedFog.r + tint));
-    this.tintedFog.b = Math.max(0, Math.min(1, this.tintedFog.b - tint));
-    mat.uFogColor.value.copy(this.tintedFog);
+    moodChroma(drive.mood, mat.uChroma.value);
 
     // Slow enough that per-frame motion stays under the point diameter, so
     // the trail buffer fuses successive stamps into a continuous streamline.

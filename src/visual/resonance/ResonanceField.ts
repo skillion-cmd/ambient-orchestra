@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { AudioFeatures, HarmonicContext, VisualKnobs } from '../../audio/types';
 import { getThemePalette, type SceneTheme } from '../ScenePalette';
 import type { FieldDrive } from '../FieldDrive';
+import { moodChroma } from '../Chroma';
 import { applyGhostTheme, createGhostMaterial, type GhostMaterial } from '../three/ghostMaterial';
 import { modeForChord, plateAt, type PlateGradient, type PlateMode } from './plate';
 
@@ -66,7 +67,6 @@ export class ResonanceField {
   private level = 0;
   private theme: SceneTheme;
   private activeCount = 0;
-  private readonly tintedFog = new THREE.Color();
 
   constructor(parent: THREE.Object3D, theme: SceneTheme = 'light') {
     this.theme = theme;
@@ -135,11 +135,7 @@ export class ResonanceField {
     mat.uSizeScale.value = 0.19 * (0.7 + drive.focus * 0.9) * (0.75 + knobs.grain * 0.4);
     mat.uAlpha.value = (dark ? 0.34 : 0.32) * (0.85 + drive.focus * 0.4);
     mat.uFogDensity.value = (dark ? 0.03 : 0.028) * drive.fog;
-    this.tintedFog.copy(getThemePalette(this.theme).ghostFog);
-    const tint = drive.mood * 0.04;
-    this.tintedFog.r = Math.max(0, Math.min(1, this.tintedFog.r + tint));
-    this.tintedFog.b = Math.max(0, Math.min(1, this.tintedFog.b - tint));
-    mat.uFogColor.value.copy(this.tintedFog);
+    moodChroma(drive.mood, mat.uChroma.value);
 
     // How hard the grains are thrown about, and how fast they settle back.
     // A phrase closing is a second, softer strike; the field thrown open

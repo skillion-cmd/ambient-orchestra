@@ -7,6 +7,7 @@ import type { FluidState } from '../FluidField';
 import { resolveVisualKnobs, type VisualKnobParams } from '../VisualKnobParams';
 import type { LayerBalance } from '../LayerBalance';
 import type { FieldDrive } from '../FieldDrive';
+import { moodChroma } from '../Chroma';
 import { layerScale } from '../LayerBalance';
 import { createGhostMaterial, applyGhostTheme, type GhostMaterial } from './ghostMaterial';
 import { getThemePalette, type SceneTheme } from '../ScenePalette';
@@ -76,7 +77,6 @@ export class GhostField {
   private theme: SceneTheme = 'light';
   /** Decaying constellation strength — coherent emergent shape (0–1) */
   private constellationT = 0;
-  private readonly tintedFog = new THREE.Color();
 
   constructor(parent: THREE.Group, theme: SceneTheme = 'light') {
     this.theme = theme;
@@ -171,11 +171,7 @@ export class GhostField {
     mat.uSizeScale.value =
       this.params.sizeScale * (1 + spaceThrow * 0.7) * (1 - inhale * 0.24);
     // Warm/cool palette tint from the Art Director — subtle hue offset.
-    this.tintedFog.copy(getThemePalette(this.theme).ghostFog);
-    const tint = drive.mood * 0.04;
-    this.tintedFog.r = Math.max(0, Math.min(1, this.tintedFog.r + tint));
-    this.tintedFog.b = Math.max(0, Math.min(1, this.tintedFog.b - tint));
-    mat.uFogColor.value.copy(this.tintedFog);
+    moodChroma(drive.mood, mat.uChroma.value);
 
     this.points.visible = balance.ghostWeight > 0.08;
 

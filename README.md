@@ -110,9 +110,19 @@ field, the same room, but with a polyphonic instrument at the front of it.
 - **Layered 3D field (Three.js)** — two render layers sharing one audio-driven breath:
   - **Ghosts** — hundreds of soft circular ink discs in two size classes, drifting through a 3D field with heavy trail persistence
   - **Bodies** — sparse milky tube extrusions with depth-pass shading
-- **Art Director Skill (autonomous)** — a visual creative-direction layer: modulates **fog depth** per phase, drives **dreamlike focus arcs** (slow oscillation plus event-triggered snaps), shifts the **palette mood** with the harmony (warmer on tonic, cooler on tension), and triggers **constellation moments** on bloom
+- **Art Director Skill (autonomous)** — a visual creative-direction layer: modulates **fog depth** per phase, drives **dreamlike focus arcs** (slow oscillation plus event-triggered snaps), shifts the **palette mood** with the harmony (warmer on tonic, cooler on tension), and triggers **constellation moments** on bloom. Every directive except the constellation reaches all three visuals through the shared drive
 - **Ink-in-water trails** — a unified WebGL fade buffer accumulates ghost strokes into soft pools that slowly dissolve back into the field
 - **Light / dark field** — pale `#ececec` default with dark charcoal ink; a luminous **dark field** on a deep blue-black `#08080f` ground, with bodies tinted to share the field's chroma
+- **Harmonic chroma** — the harmony is the one thing in the field allowed any
+  colour: tonic warms toward amber, dominant and colour chords cool toward
+  blue-violet, and the corridor between rooms drifts it back to neutral. It is
+  chromesthesia at the level of the chord rather than the note — a note-to-hue
+  mapping would put colour on every event, and the restraint is most of what
+  makes the field read as ink, weather and sand rather than as a visualiser.
+  The whole range end to end is about three percent of saturation, measured:
+  enough to feel the light in the room change, under the threshold where you
+  would name a colour. All four layers carry it at the same weight, so it is
+  the same light falling on all three visuals
 - **Breathe** — quiet passages retract; loud ensemble moments expand radius, length, and ghost density
 - **Morphology** — shape blends continuously with movement phase (network / sphere / waveform paths); no hard form cuts
 - **Audio-reactive** — FFT spectrum deforms tube paths and thickness; harmonic swell drives fog, camera, and pulse

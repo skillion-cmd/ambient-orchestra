@@ -23,6 +23,7 @@ const fragmentShader = /* glsl */ `
   uniform float milky;
   uniform float uPresence;
   uniform float uDarkField;
+  uniform vec3 uChroma;
 
   varying float vDepth;
   varying vec3 vNormal;
@@ -52,7 +53,11 @@ const fragmentShader = /* glsl */ `
     // share the palette instead of rendering as flat grey. In light mode the
     // fog colour is near-neutral, so this is effectively a no-op.
     vec3 chroma = fogColor - vec3(dot(fogColor, vec3(0.3333)));
-    vec3 col = vec3(tone) + chroma * (uDarkField > 0.5 ? 2.6 : 1.0) * (0.5 + tone);
+    // The field's own chroma, plus the harmony's. The first is the dark
+    // field's blue-black; the second is the chord, at the same few percent
+    // the ghosts carry, so the bodies do not become the loudest colour in a
+    // room that is otherwise ink.
+    vec3 col = vec3(tone) + chroma * (uDarkField > 0.5 ? 2.6 : 1.0) * (0.5 + tone) + uChroma;
 
     col = mix(col, fogColor, fogFactor * (0.68 + milky * 0.22));
 
@@ -72,6 +77,7 @@ export interface MilkyUniforms {
   fogColor: THREE.IUniform<THREE.Color>;
   fogDensity: THREE.IUniform<number>;
   uDarkField: THREE.IUniform<number>;
+  uChroma: THREE.IUniform<THREE.Vector3>;
 }
 
 export function createMilkyMaterial(): MilkyMaterial {
@@ -83,6 +89,7 @@ export function createMilkyMaterial(): MilkyMaterial {
     fogColor: { value: MILKY_FOG.clone() },
     fogDensity: { value: 0.045 },
     uDarkField: { value: 0 },
+    uChroma: { value: new THREE.Vector3() },
   };
 
   return new THREE.ShaderMaterial({

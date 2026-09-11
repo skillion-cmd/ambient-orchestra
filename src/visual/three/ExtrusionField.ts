@@ -7,6 +7,7 @@ import type { VisualForm } from '../VisualForm';
 import { resolveVisualKnobs, type VisualKnobParams } from '../VisualKnobParams';
 import type { LayerBalance } from '../LayerBalance';
 import type { FieldDrive } from '../FieldDrive';
+import { moodChroma } from '../Chroma';
 import { layerScale } from '../LayerBalance';
 import type { VisualReadoutState } from '../VisualReadout';
 import { createMilkyMaterial, type MilkyMaterial } from './milkyMaterial';
@@ -121,6 +122,7 @@ export class ExtrusionField {
     mat.milky.value = 0.45 + state.ghostMix + knobs.drift * 0.35;
     mat.fogDensity.value = (0.032 + knobs.drift * 0.04 + state.ghostMix * 0.02) * drive.fog;
     mat.uPresence.value = 0.18 + balance.bodyWeight * 0.95;
+    moodChroma(drive.mood, mat.uChroma.value);
 
     for (const strand of this.strands) {
       this.updateStrand(
