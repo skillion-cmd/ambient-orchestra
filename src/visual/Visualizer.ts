@@ -7,6 +7,7 @@ import { FluidField } from './FluidField';
 import { resolveVisualKnobs, type VisualKnobParams } from './VisualKnobParams';
 import { resolveLayerBalance } from './LayerBalance';
 import type { ArtDirectorDirectives } from './ArtDirectorSkill';
+import { FieldDriveSource } from './FieldDrive';
 import {
   applySceneFog,
   getThemePalette,
@@ -17,10 +18,20 @@ import { ExtrusionField } from './three/ExtrusionField';
 import { GhostField } from './three/GhostField';
 import { TrailPass } from './three/TrailPass';
 import { CurrentsField } from './currents/CurrentsField';
-import { ResonanceField } from './resonance/ResonanceField';
+import { PLANE_Z as RESONANCE_PLANE_Z, ResonanceField } from './resonance/ResonanceField';
 import { loadStoredVisualMode, type VisualMode } from './VisualMode';
 
 const MAX_DPR = 1.5;
+
+/**
+ * Where the camera sits when nothing is pulling it. The plate is sized
+ * against this, so the two have to be one number — a camera that rested
+ * somewhere else would frame a plate cut to fit a place it never is.
+ */
+const CAMERA_REST_Z = 15.5;
+
+/** How much of the frustum the plate fills, leaving it edges to be seen by. */
+const PLATE_FILL = 0.94;
 
 export type VisualizerInitResult = 'ok' | 'webgl-unavailable';
 
@@ -49,10 +60,16 @@ export class Visualizer {
   private height = 0;
   private cameraDrift = 0;
   private breathe = 0.5;
-  private artFocusOffset = 0;
+  /** One reading of the piece, handed to whichever field is on screen. */
+  private readonly driveSource = new FieldDriveSource();
+  private art: ArtDirectorDirectives = {
+    fogMultiplier: 1,
+    focusOffset: 0,
+    moodBlend: 0,
+    constellationTrigger: false,
+  };
   /** 0 = the ink field's orbit, 1 = square onto the resonance plate. */
   private planeLock = 0;
-  private artFogMultiplier = 1;
   private visualParams: VisualKnobParams = resolveVisualKnobs(DEFAULT_KNOBS.visual);
 
   constructor(private readonly canvas: HTMLCanvasElement, theme: SceneTheme = loadStoredTheme()) {
@@ -100,13 +117,18 @@ export class Visualizer {
     }
   }
 
-  /** Apply autonomous Art Director directives — call before update(). */
+  /**
+   * Apply autonomous Art Director directives — call before update().
+   *
+   * Fog, focus and mood are held for the frame's FieldDrive rather than
+   * pushed at one field: they used to reach the ink field only, which is
+   * why the director's focus arc and phase fog were invisible in two of the
+   * three visuals. The constellation stays an ink-only one-shot — it is a
+   * shape made out of ghosts, and there is nothing to make it from
+   * elsewhere.
+   */
   applyDirectives(d: ArtDirectorDirectives): void {
-    this.artFogMultiplier = d.fogMultiplier;
-    this.ghosts.moodBlend = d.moodBlend;
-    if (this.currents) this.currents.moodBlend = d.moodBlend;
-    if (this.resonance) this.resonance.moodBlend = d.moodBlend;
-    this.artFocusOffset = d.focusOffset;
+    this.art = d;
     if (d.constellationTrigger) this.ghosts.triggerConstellation();
   }
 
@@ -137,8 +159,23 @@ export class Visualizer {
       // a flat figure read head-on, and the world scale would push most of
       // it out of frame.
       this.resonance = new ResonanceField(this.scene, this.theme);
+      this.syncPlateExtent();
     }
     return this.resonance;
+  }
+
+  /**
+   * Cut the plate to the window. The frustum at the plate's depth is what
+   * "fits the screen" actually means here, so it is measured rather than
+   * guessed: a fixed square left a third of a landscape window empty on
+   * either side.
+   */
+  private syncPlateExtent(): void {
+    if (!this.resonance) return;
+    const distance = CAMERA_REST_Z - RESONANCE_PLANE_Z;
+    const halfHeight =
+      Math.tan((this.camera.fov * Math.PI) / 360) * distance * PLATE_FILL;
+    this.resonance.setExtent(halfHeight * this.camera.aspect, halfHeight);
   }
 
   setTheme(theme: SceneTheme): void {
@@ -173,6 +210,7 @@ export class Visualizer {
     this.camera.aspect = this.width / Math.max(1, this.height);
     this.camera.updateProjectionMatrix();
     this.trailPass.resize(this.canvas.width, this.canvas.height);
+    this.syncPlateExtent();
   }
 
   update(
@@ -211,23 +249,23 @@ export class Visualizer {
     const breatheSmooth = 1 - Math.exp(-dt / 0.22);
     this.breathe += (breatheTarget - this.breathe) * breatheSmooth;
 
-    const focus = Math.max(0, Math.min(1, knobs.focus + this.artFocusOffset));
-    const balance = resolveLayerBalance(focus);
+    // The one reading of the piece every field works from. Focus and fog
+    // carry the Art Director inside them, so a field consuming the drive
+    // gets the director's arc whether or not it knows he exists.
+    const drive = this.driveSource.update(harmonic, knobs, this.art, this.breathe, dt);
+    const balance = resolveLayerBalance(drive.focus);
 
-    // Fog knob rides over the art director's phase breathing (neutral at 0.5).
-    const fogK = 0.5 + knobs.fog;
-    this.ghosts.fogMultiplier = this.artFogMultiplier * fogK;
     const sceneFog = this.scene.fog as THREE.FogExp2 | null;
-    if (sceneFog) sceneFog.density = getThemePalette(this.theme).fogDensity * fogK;
+    if (sceneFog) sceneFog.density = getThemePalette(this.theme).fogDensity * (0.5 + knobs.fog);
 
     const inCurrents = this.visualMode === 'currents' && this.currents;
     const inResonance = this.visualMode === 'resonance' && this.resonance;
     if (inCurrents) {
       this.visualParams = resolveVisualKnobs(knobs);
-      this.currents!.update(dt, features, harmonic, knobs, this.breathe);
+      this.currents!.update(dt, features, harmonic, knobs, drive);
     } else if (inResonance) {
       this.visualParams = resolveVisualKnobs(knobs);
-      this.resonance!.update(dt, features, harmonic, knobs, this.breathe);
+      this.resonance!.update(dt, features, harmonic, knobs, drive);
     } else {
       this.visualParams = this.ghosts.update(
         dt,
@@ -235,16 +273,16 @@ export class Visualizer {
         features,
         harmonic,
         knobs,
-        this.breathe,
+        drive,
         balance,
       );
-      this.bodies.update(dt, state, features, harmonic, knobs, bands, this.breathe, balance);
+      this.bodies.update(dt, state, features, harmonic, knobs, bands, drive, balance);
     }
 
     this.cameraDrift += dt * (0.08 + knobs.drift * 0.12);
-    const inhale = harmonic.inhaleGesture;
-    const spaceThrow = harmonic.spaceThrowGesture;
-    const camR = 15.5 + state.swell * 1.8 - inhale * 2.5 + spaceThrow * 1.8;
+    const inhale = drive.inhale;
+    const spaceThrow = drive.expand;
+    const camR = CAMERA_REST_Z + state.swell * 1.8 - inhale * 2.5 + spaceThrow * 1.8;
 
     // A figure has to be looked at square. The orbit that makes the ink
     // field feel like a space you are moving through shears a Chladni

@@ -33,6 +33,7 @@ const fragmentShader = /* glsl */ `
   uniform float uFogDensity;
   uniform vec3 uFogColor;
   uniform float uDarkField;
+  uniform vec3 uChroma;
 
   varying float vDepth;
   varying float vHeat;
@@ -74,7 +75,20 @@ const fragmentShader = /* glsl */ `
     // Faster particles glow a touch brighter — energy without shape distortion.
     alpha *= 1.0 + clamp(velLen, 0.0, 1.0) * 0.18;
 
-    gl_FragColor = vec4(vec3(tone), alpha);
+    // Everything above this line is a grey, which is what the field was:
+    // uFogColor is sampled for its red channel alone and the output was
+    // vec3(tone). The harmonic chroma is the one colour in it — an offset
+    // of a few percent, carried at the same weight by ink, wind and sand.
+    // See Chroma.ts for why it is this small and why it is the chord's
+    // rather than the note's.
+    // The dark field blends additively, so overlapping ghosts stack their
+    // chroma while the tone underneath them clips at white — a dense knot
+    // measured three times the intended ceiling before this trim. Halving
+    // it there puts a crowded region back in the same range as a sparse
+    // one, which is the whole point of having a ceiling.
+    vec3 col = vec3(tone) + uChroma * (uDarkField > 0.5 ? 0.45 : 1.0);
+
+    gl_FragColor = vec4(clamp(col, 0.0, 1.0), alpha);
   }
 `;
 
@@ -84,6 +98,7 @@ export interface GhostUniforms {
   uFogColor: THREE.IUniform<THREE.Color>;
   uSizeScale: THREE.IUniform<number>;
   uDarkField: THREE.IUniform<number>;
+  uChroma: THREE.IUniform<THREE.Vector3>;
 }
 
 export function createGhostMaterial(fogColor: THREE.Color, theme: SceneTheme = 'light'): GhostMaterial {
@@ -95,6 +110,7 @@ export function createGhostMaterial(fogColor: THREE.Color, theme: SceneTheme = '
       uFogColor: { value: fogColor.clone() },
       uSizeScale: { value: 1 },
       uDarkField: { value: dark ? 1 : 0 },
+      uChroma: { value: new THREE.Vector3() },
     } as GhostUniforms as unknown as { [uniform: string]: THREE.IUniform },
     vertexShader,
     fragmentShader,

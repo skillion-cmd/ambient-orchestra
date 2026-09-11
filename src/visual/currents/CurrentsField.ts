@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import type { AudioFeatures, HarmonicContext, VisualKnobs } from '../../audio/types';
 import { getThemePalette, type SceneTheme } from '../ScenePalette';
+import type { FieldDrive } from '../FieldDrive';
+import { moodChroma } from '../Chroma';
 import { applyGhostTheme, createGhostMaterial, type GhostMaterial } from '../three/ghostMaterial';
 import {
   createFlowField,
@@ -76,9 +78,9 @@ export class CurrentsField {
   private activeCount = 0;
   // Smoothed lane levels so particle speeds breathe instead of flickering.
   private readonly laneLevels = [0, 0, 0];
-  /** Art Director palette mood (-1 cool .. +1 warm); see GhostField. */
-  moodBlend = 0;
-  private readonly tintedFog = new THREE.Color();
+  /** How far the phrase-closing band has travelled across the map. */
+  private rippleRadius = 0;
+  private lastRipple = 0;
 
   constructor(parent: THREE.Object3D, theme: SceneTheme = 'light') {
     this.theme = theme;
@@ -113,8 +115,9 @@ export class CurrentsField {
     features: AudioFeatures,
     harmonic: HarmonicContext,
     knobs: VisualKnobs,
-    breathe: number,
+    drive: FieldDrive,
   ): void {
+    const breathe = drive.breathe;
     // Field character morphs with the movement phase — never pops.
     const character = flowCharacterFor(harmonic.movementPhase);
     const ease = 1 - Math.exp(-dt / 8);
@@ -129,13 +132,30 @@ export class CurrentsField {
     this.laneLevels[LANE_MIDS]! += (features.mids - this.laneLevels[LANE_MIDS]!) * laneSmooth;
     this.laneLevels[LANE_HIGHS]! += (features.highs - this.laneLevels[LANE_HIGHS]!) * laneSmooth;
 
-    // Ensemble swells and beats read as gusts — squalls crossing the map.
-    const gust = harmonic.ensemblePulse * 0.7 + harmonic.beatPulse * 0.3;
+    // Ensemble swells read as gusts — squalls crossing the map. The strike
+    // already carries the beat and the doorway, so crossing between rooms
+    // now arrives here as the weather turning rather than as nothing.
+    const gust = drive.strike * 0.85 + drive.expand * 0.6;
 
-    // Focus trades many faint threads for fewer, bolder ribbons.
-    const countMul = 1.15 - knobs.focus * 0.55;
-    const sizeMul = 0.75 + knobs.focus * 0.9;
-    const alphaMul = 0.85 + knobs.focus * 0.55;
+    // A phrase closing crosses the map as a band of brighter air, travelling
+    // out from the centre. Ink answers the same cadence as a ring through
+    // the ghosts and Resonance as a second, softer strike.
+    if (drive.ripple > 0.65 && this.lastRipple <= 0.35) this.rippleRadius = 0;
+    this.lastRipple = drive.ripple;
+    if (drive.ripple > 0.02) this.rippleRadius += dt * 6.5;
+    else this.rippleRadius *= 0.92;
+
+    // The breath before a gesture: the wind drops and the map goes still.
+    // Currents is the one visual where that reads as an absence of motion
+    // rather than a contraction, which is what an inhale is.
+    const lull = 1 - drive.inhale * 0.5;
+
+    // Focus trades many faint threads for fewer, bolder ribbons — and it is
+    // the drive's focus, so the Art Director's dreamlike arc and its doorway
+    // snap reach the wind map instead of stopping at the ink field.
+    const countMul = 1.15 - drive.focus * 0.55;
+    const sizeMul = 0.75 + drive.focus * 0.9;
+    const alphaMul = 0.85 + drive.focus * 0.55;
 
     const activity = harmonic.groupActivity;
     const activitySum =
@@ -155,18 +175,15 @@ export class CurrentsField {
 
     const dark = this.theme === 'dark';
     const mat = this.material.uniforms;
-    mat.uSizeScale.value = 0.46 * sizeMul * (0.7 + knobs.grain * 0.5);
+    mat.uSizeScale.value =
+      0.46 * sizeMul * (0.7 + knobs.grain * 0.5) * (1 - drive.inhale * 0.2);
     mat.uAlpha.value = (dark ? 0.3 : 0.28) * alphaMul;
-    mat.uFogDensity.value = (dark ? 0.036 : 0.032) * (0.6 + knobs.fog * 0.8);
-    this.tintedFog.copy(getThemePalette(this.theme).ghostFog);
-    const tint = this.moodBlend * 0.04;
-    this.tintedFog.r = Math.max(0, Math.min(1, this.tintedFog.r + tint));
-    this.tintedFog.b = Math.max(0, Math.min(1, this.tintedFog.b - tint));
-    mat.uFogColor.value.copy(this.tintedFog);
+    mat.uFogDensity.value = (dark ? 0.036 : 0.032) * drive.fog;
+    moodChroma(drive.mood, mat.uChroma.value);
 
     // Slow enough that per-frame motion stays under the point diameter, so
     // the trail buffer fuses successive stamps into a continuous streamline.
-    const baseSpeed = 0.75 + knobs.drift * 1.9;
+    const baseSpeed = (0.75 + knobs.drift * 1.9) * lull;
     let alive = 0;
     for (const p of this.pool) if (p.active) alive++;
 
@@ -224,7 +241,13 @@ export class CurrentsField {
       // respawns never pop against the trail buffer.
       const fadeIn = Math.min(1, p.age * 2);
       const fadeOut = Math.min(1, Math.max(0, (p.lifetime - p.age) * 1));
-      this.heats[i] = Math.min(1, laneLevel * 0.9 + gust * 0.5) * fadeIn * fadeOut;
+      // Sitting in the travelling band lifts a particle's heat, so the
+      // cadence reads as a front passing rather than a global flash.
+      const band =
+        drive.ripple > 0.02
+          ? Math.exp(-Math.abs(Math.hypot(p.x, p.y) - this.rippleRadius) * 0.8) * drive.ripple
+          : 0;
+      this.heats[i] = Math.min(1, laneLevel * 0.9 + gust * 0.5 + band * 0.8) * fadeIn * fadeOut;
       this.depths[i] = p.lane === LANE_BASS ? 0.85 : p.lane === LANE_MIDS ? 0.5 : 0.25;
       const k = i * 2;
       const invDt = dt > 1e-6 ? 1 / dt : 0;

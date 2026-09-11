@@ -1,24 +1,53 @@
 import * as THREE from 'three';
 import type { AudioFeatures, HarmonicContext, VisualKnobs } from '../../audio/types';
 import { getThemePalette, type SceneTheme } from '../ScenePalette';
+import type { FieldDrive } from '../FieldDrive';
+import { moodChroma } from '../Chroma';
 import { applyGhostTheme, createGhostMaterial, type GhostMaterial } from '../three/ghostMaterial';
 import { modeForChord, plateAt, type PlateGradient, type PlateMode } from './plate';
 
-const CAPACITY = 4000;
+/**
+ * Grains at the baseline square plate, and the ceiling once a wide window
+ * asks for a bigger one. The target scales with the plate's area so that
+ * density — grains per unit of plate — is the same whatever the window is
+ * doing; a wider plate with the same grain count would simply draw the
+ * same figure fainter.
+ */
+const GRAINS_PER_SQUARE = 4000;
+const CAPACITY = 8000;
 
 /**
- * The plate is square, and small enough to be seen whole.
+ * The plate takes the shape of the window.
  *
- * Unlike the currents plane — deliberately oversized, because a wind map
- * has no edges and you are looking at part of one — a Chladni figure is a
- * single object with a shape, and half of one is not the figure. These
- * bounds put the whole plate inside the frustum at the camera's resting
- * distance, with margin on a wide window, which is also what a plate looks
- * like: a square on a bench, not a wall.
+ * It used to be a fixed square, which meant a landscape window framed it
+ * with a third of the screen empty on either side. It is still a single
+ * object seen whole — the bounds come from the camera frustum with a
+ * margin, so the edges stay on screen and it reads as a plate on a bench
+ * rather than a wall — but the bench is now as wide as the room.
+ *
+ * Filling that width is the job of the mode aspect rather than a stretch:
+ * see plateAt. The figure is never distorted, there is simply more plate
+ * to put it on.
  */
-const BOUND_X = 2.4;
-const BOUND_Y = 2.4;
-const PLANE_Z = 9;
+const BASE_HALF_EXTENT = 2.4;
+export const PLANE_Z = 9;
+
+/**
+ * How far the mode numbers will follow the window before the figure is
+ * allowed to stretch instead.
+ *
+ * Scaling the modes keeps the cells square, but it also multiplies the
+ * nodal lines, and past a point they crowd closer than a grain can draw:
+ * an ultrawide window at full compensation turned the outer thirds of the
+ * plate into fine texture rather than a figure. Beyond this the plate
+ * keeps taking the full width and the residual arrives as a gentle
+ * stretch, which costs a little cell squareness and keeps the lines
+ * resolvable — the right way round, because a figure you cannot read is
+ * worse than one slightly wider than it is tall.
+ *
+ * 1.9 covers 16:9 and 16:10 exactly, so the common cases are undistorted.
+ */
+const MAX_MODE_ASPECT = 1.9;
 
 interface Grain {
   x: number;
@@ -59,18 +88,14 @@ export class ResonanceField {
   private readonly velocities = new Float32Array(CAPACITY * 2);
   private readonly sizes = new Float32Array(CAPACITY);
   private readonly grad: PlateGradient = { psi: 0, du: 0, dv: 0 };
+  private boundX = BASE_HALF_EXTENT;
+  private boundY = BASE_HALF_EXTENT;
   /** Held as floats so a chord change morphs between figures. */
   private readonly mode: PlateMode = { n: 3, m: 5 };
   private target: PlateMode = { n: 3, m: 5 };
-  /** Decaying strike energy — the plate having just been hit. */
-  private strike = 0;
-  private lastGestureId = -1;
-  private drive = 0;
+  private level = 0;
   private theme: SceneTheme;
   private activeCount = 0;
-  /** Art Director palette mood (-1 cool .. +1 warm); see GhostField. */
-  moodBlend = 0;
-  private readonly tintedFog = new THREE.Color();
 
   constructor(parent: THREE.Object3D, theme: SceneTheme = 'light') {
     this.theme = theme;
@@ -96,6 +121,17 @@ export class ResonanceField {
     applyGhostTheme(this.material, theme, getThemePalette(theme).ghostFog);
   }
 
+  /**
+   * Resize the plate to the window. Grains already on it keep their world
+   * positions: those now outside the plate are re-scattered by the escape
+   * check on the next frame, and the figure redraws around them, so a
+   * window drag reshapes the plate rather than restarting it.
+   */
+  setExtent(halfWidth: number, halfHeight: number): void {
+    this.boundX = Math.max(0.5, halfWidth);
+    this.boundY = Math.max(0.5, halfHeight);
+  }
+
   getActiveCount(): number {
     return this.activeCount;
   }
@@ -110,8 +146,9 @@ export class ResonanceField {
     features: AudioFeatures,
     harmonic: HarmonicContext,
     knobs: VisualKnobs,
-    breathe: number,
+    drive: FieldDrive,
   ): void {
+    const breathe = drive.breathe;
     this.target = modeForChord(harmonic);
     // Morph rather than cut. Drift sets how fast the plate retunes: tight is
     // a figure that snaps to each chord, misty is one still on its way to
@@ -121,39 +158,48 @@ export class ResonanceField {
     this.mode.m += (this.target.m - this.mode.m) * retune;
 
     // The plate is struck by the ensemble, not by the level: a gesture, a
-    // beat, or walking through the doorway.
-    if (harmonic.gestureId !== this.lastGestureId) {
-      this.lastGestureId = harmonic.gestureId;
-      this.strike = Math.min(1, this.strike + harmonic.ensemblePulse * 0.8 + 0.2);
-    }
-    this.strike = Math.max(
-      0,
-      Math.max(this.strike - dt * 0.9, harmonic.beatPulse * 0.45 + harmonic.doorwayPulse * 0.7),
-    );
+    // beat, or walking through the doorway. That envelope is the shared
+    // drive's now, so the same hit lights the ink and gusts the wind map.
+    const levelTarget = features.overall * 0.6 + features.mids * 0.25 + features.bass * 0.15;
+    this.level += (levelTarget - this.level) * (1 - Math.exp(-dt / 0.35));
 
-    const driveTarget = features.overall * 0.6 + features.mids * 0.25 + features.bass * 0.15;
-    this.drive += (driveTarget - this.drive) * (1 - Math.exp(-dt / 0.35));
-
+    // Grains per unit of plate, not grains per plate: a window twice as
+    // wide gets twice the sand, so the figure is drawn at the same weight
+    // rather than thinning out as it grows.
+    const area = (this.boundX * this.boundY) / (BASE_HALF_EXTENT * BASE_HALF_EXTENT);
     const aliveTarget = Math.min(
       CAPACITY,
-      Math.floor(CAPACITY * (0.32 + knobs.grain * 0.68) * (0.6 + breathe * 0.4)),
+      Math.floor(GRAINS_PER_SQUARE * area * (0.32 + knobs.grain * 0.68) * (0.6 + breathe * 0.4)),
     );
 
     const dark = this.theme === 'dark';
     const mat = this.material.uniforms;
-    // Focus trades a fine dusting for coarser, heavier grains.
-    mat.uSizeScale.value = 0.19 * (0.7 + knobs.focus * 0.9) * (0.75 + knobs.grain * 0.4);
-    mat.uAlpha.value = (dark ? 0.34 : 0.32) * (0.85 + knobs.focus * 0.4);
-    mat.uFogDensity.value = (dark ? 0.03 : 0.028) * (0.6 + knobs.fog * 0.8);
-    this.tintedFog.copy(getThemePalette(this.theme).ghostFog);
-    const tint = this.moodBlend * 0.04;
-    this.tintedFog.r = Math.max(0, Math.min(1, this.tintedFog.r + tint));
-    this.tintedFog.b = Math.max(0, Math.min(1, this.tintedFog.b - tint));
-    mat.uFogColor.value.copy(this.tintedFog);
+    // Focus trades a fine dusting for coarser, heavier grains — from the
+    // drive, so the director's focus arc reaches the plate too.
+    mat.uSizeScale.value = 0.19 * (0.7 + drive.focus * 0.9) * (0.75 + knobs.grain * 0.4);
+    mat.uAlpha.value = (dark ? 0.34 : 0.32) * (0.85 + drive.focus * 0.4);
+    mat.uFogDensity.value = (dark ? 0.03 : 0.028) * drive.fog;
+    moodChroma(drive.mood, mat.uChroma.value);
+
+    // Square cells where the window is a shape the modes can follow; past
+    // that, a gentle stretch rather than lines too fine to read.
+    const modeAspect = Math.max(
+      1 / MAX_MODE_ASPECT,
+      Math.min(MAX_MODE_ASPECT, this.boundX / this.boundY),
+    );
 
     // How hard the grains are thrown about, and how fast they settle back.
-    const agitation = (0.03 + this.drive * 0.38 + this.strike * 0.75) * (0.4 + knobs.ripple * 1.2);
-    const settle = 3.2 + knobs.drift * 2.6;
+    // A phrase closing is a second, softer strike; the field thrown open
+    // scatters the plate wide.
+    let agitation =
+      (0.03 + this.level * 0.38 + drive.strike * 0.75 + drive.ripple * 0.35 + drive.expand * 0.5) *
+      (0.4 + knobs.ripple * 1.2);
+    // The inhale does the opposite here to everywhere else, and it should:
+    // the breath before a gesture is the plate going still, and a still
+    // plate is one that draws its figure sharply. Ink contracts, the wind
+    // map drops, and Resonance comes into focus — one event, three readings.
+    agitation *= 1 - drive.inhale * 0.6;
+    const settle = (3.2 + knobs.drift * 2.6) * (1 + drive.inhale * 0.8);
 
     let alive = 0;
     for (const g of this.pool) if (g.active) alive++;
@@ -188,9 +234,9 @@ export class ResonanceField {
         this.scatter(g);
       }
 
-      const u = g.x / BOUND_X;
-      const v = g.y / BOUND_Y;
-      plateAt(u, v, this.mode, this.grad);
+      const u = g.x / this.boundX;
+      const v = g.y / this.boundY;
+      plateAt(u, v, this.mode, this.grad, modeAspect);
       const { psi, du, dv } = this.grad;
       const mag = Math.hypot(du, dv);
       const prevX = g.x;
@@ -207,8 +253,8 @@ export class ResonanceField {
         // step.
         const k = Math.min(0.4, settle * dt);
         const toLine = (k * psi) / (mag * mag);
-        g.x -= toLine * du * BOUND_X;
-        g.y -= toLine * dv * BOUND_Y;
+        g.x -= toLine * du * this.boundX;
+        g.y -= toLine * dv * this.boundY;
       }
 
       // The plate's own motion. Strongest at the antinodes, which is why the
@@ -219,7 +265,7 @@ export class ResonanceField {
       // A grain shaken off the plate is gone, and a new one is sprinkled on.
       // Clamping instead would park it against the edge, where it is not
       // settled on anything and reads as a frame around the figure.
-      if (Math.abs(g.x) > BOUND_X || Math.abs(g.y) > BOUND_Y) this.scatter(g);
+      if (Math.abs(g.x) > this.boundX || Math.abs(g.y) > this.boundY) this.scatter(g);
 
       const j = i * 3;
       this.positions[j] = g.x;
@@ -249,8 +295,8 @@ export class ResonanceField {
 
   /** Drop a grain somewhere new on the plate. */
   private scatter(g: Grain): void {
-    g.x = (Math.random() * 2 - 1) * BOUND_X;
-    g.y = (Math.random() * 2 - 1) * BOUND_Y;
+    g.x = (Math.random() * 2 - 1) * this.boundX;
+    g.y = (Math.random() * 2 - 1) * this.boundY;
     g.z = PLANE_Z + (Math.random() * 2 - 1) * 0.25;
     g.life = 6 + Math.random() * 14;
     g.size = 0.6 + Math.random() * 0.7;

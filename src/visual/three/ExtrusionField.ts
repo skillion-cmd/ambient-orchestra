@@ -6,6 +6,8 @@ import type { FluidState } from '../FluidField';
 import type { VisualForm } from '../VisualForm';
 import { resolveVisualKnobs, type VisualKnobParams } from '../VisualKnobParams';
 import type { LayerBalance } from '../LayerBalance';
+import type { FieldDrive } from '../FieldDrive';
+import { moodChroma } from '../Chroma';
 import { layerScale } from '../LayerBalance';
 import type { VisualReadoutState } from '../VisualReadout';
 import { createMilkyMaterial, type MilkyMaterial } from './milkyMaterial';
@@ -87,16 +89,17 @@ export class ExtrusionField {
     harmonic: HarmonicContext,
     knobs: VisualKnobs,
     spectrum: Float32Array,
-    breathe: number,
+    drive: FieldDrive,
     balance: LayerBalance,
   ): VisualKnobParams {
+    const breathe = drive.breathe;
     this.params = resolveVisualKnobs(knobs);
     this.time += dt;
     this.breathe = breathe;
     this.smoothSpectrum(spectrum, dt);
 
     this.swell =
-      state.swell + features.bass * 0.14 + harmonic.ensemblePulse * 0.22 + state.morph * 0.05;
+      state.swell + features.bass * 0.14 + drive.strike * 0.22 + state.morph * 0.05;
 
     this.targetMorphology = morphologyFromHarmonic(harmonic);
     const morphSmooth = 1 - Math.exp(-dt / 4);
@@ -117,9 +120,9 @@ export class ExtrusionField {
     mat.time.value = this.time;
     mat.grain.value = 0.02 + knobs.grain * 0.045;
     mat.milky.value = 0.45 + state.ghostMix + knobs.drift * 0.35;
-    mat.fogDensity.value =
-      (0.032 + knobs.drift * 0.04 + state.ghostMix * 0.02) * (0.6 + knobs.fog * 0.8);
+    mat.fogDensity.value = (0.032 + knobs.drift * 0.04 + state.ghostMix * 0.02) * drive.fog;
     mat.uPresence.value = 0.18 + balance.bodyWeight * 0.95;
+    moodChroma(drive.mood, mat.uChroma.value);
 
     for (const strand of this.strands) {
       this.updateStrand(

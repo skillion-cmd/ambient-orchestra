@@ -110,15 +110,52 @@ field, the same room, but with a polyphonic instrument at the front of it.
 - **Layered 3D field (Three.js)** — two render layers sharing one audio-driven breath:
   - **Ghosts** — hundreds of soft circular ink discs in two size classes, drifting through a 3D field with heavy trail persistence
   - **Bodies** — sparse milky tube extrusions with depth-pass shading
-- **Art Director Skill (autonomous)** — a visual creative-direction layer: modulates **fog depth** per phase, drives **dreamlike focus arcs** (slow oscillation plus event-triggered snaps), shifts the **palette mood** with the harmony (warmer on tonic, cooler on tension), and triggers **constellation moments** on bloom
+- **Art Director Skill (autonomous)** — a visual creative-direction layer: modulates **fog depth** per phase, drives **dreamlike focus arcs** (slow oscillation plus event-triggered snaps), shifts the **palette mood** with the harmony (warmer on tonic, cooler on tension), and triggers **constellation moments** on bloom. Every directive except the constellation reaches all three visuals through the shared drive
 - **Ink-in-water trails** — a unified WebGL fade buffer accumulates ghost strokes into soft pools that slowly dissolve back into the field
 - **Light / dark field** — pale `#ececec` default with dark charcoal ink; a luminous **dark field** on a deep blue-black `#08080f` ground, with bodies tinted to share the field's chroma
+- **Harmonic chroma** — the harmony is the one thing in the field allowed any
+  colour: tonic warms toward amber, dominant and colour chords cool toward
+  blue-violet, and the corridor between rooms drifts it back to neutral. It is
+  chromesthesia at the level of the chord rather than the note — a note-to-hue
+  mapping would put colour on every event, and the restraint is most of what
+  makes the field read as ink, weather and sand rather than as a visualiser.
+  The whole range end to end is about three percent of saturation, measured:
+  enough to feel the light in the room change, under the threshold where you
+  would name a colour. All four layers carry it at the same weight, so it is
+  the same light falling on all three visuals
 - **Breathe** — quiet passages retract; loud ensemble moments expand radius, length, and ghost density
 - **Morphology** — shape blends continuously with movement phase (network / sphere / waveform paths); no hard form cuts
 - **Audio-reactive** — FFT spectrum deforms tube paths and thickness; harmonic swell drives fog, camera, and pulse
 - **Focus balance** — crossfade ghost vs body presence from 70/30 to 50/50 to 30/70
 - **Three visuals, one field** — *Ink* is the layered ghost/body world above; *Currents* is a wind map, streamline particles advected through an audio-shaped curl-noise field; *Resonance* is a **Chladni plate**, grains settling onto the nodal lines of a standing wave. All three read the same audio and the same harmonic context
+- **One drive, three readings** — every field works from a single reading of
+  the piece (`FieldDrive`): the Art Director's focus arc and fog breathing,
+  the palette mood, and one shared vocabulary of events — a strike, a phrase
+  closing, the breath drawn before a gesture, the field thrown open, and the
+  doorway. Each visual answers the same event in its own terms rather than
+  listening for its own private subset, so switching mode changes the noun
+  and not the language. A phrase closing is a ring through the ink, a band of
+  brighter air crossing the wind map, and a softer second strike on the
+  plate; the inhale contracts Ink and drops the wind, and on the plate does
+  the opposite — a still plate draws its figure sharply. Crossing between
+  rooms is the largest strike the piece has, and now reaches all three
+  instead of only moving the camera
+- **A played chord marks the field** — Play's note attack is part of the same
+  drive, so the instrument blooms whichever visual is on screen: playing the
+  orchestra leaves a mark on the room rather than only in the mix
 - **Resonance answers the harmony, not the level** — the plate's mode numbers come from the chord being held (the third of the chord sets one, the top of it the other), so a chord change is a figure change and the plate is showing you the interval. Ensemble gestures strike it: the grains jump and the figure reassembles. The camera settles square onto it, because a figure read at an angle shears into an unreadable diamond
+- **The plate is the shape of the window** — its bounds are measured from the
+  camera frustum, so it fills the screen at any size or aspect and reflows
+  live as the window changes, instead of sitting as a fixed square with a
+  third of a landscape window empty either side. A wide plate is filled by
+  scaling the *mode numbers* with the aspect rather than stretching the
+  figure: the cells stay square and there is simply more plate to put them
+  on, which is what a wider plate actually does. Past about 16:9 the
+  compensation caps and the remainder arrives as a gentle stretch — beyond
+  that the nodal lines crowd closer than a grain can draw, and a figure you
+  cannot read is worse than one slightly wider than it is tall. Grain count
+  follows the plate's area, so a bigger figure is drawn at the same weight
+  rather than thinning out
 
 ### UI
 

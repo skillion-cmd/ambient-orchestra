@@ -1,7 +1,7 @@
 import type { HarmonicContext, MovementPhase } from '../../audio/types';
 
 /**
- * The standing wave on a square plate, and where the sand ends up.
+ * The standing wave on a plate, and where the sand ends up.
  *
  * A Chladni plate is the oldest audio visualiser there is: drive a metal
  * square at a resonant frequency, and the grains scattered on it bounce
@@ -20,6 +20,10 @@ import type { HarmonicContext, MovementPhase } from '../../audio/types';
  * (free-edge) form, whose figures are the ones everyone recognises. n and
  * m are held as floats rather than integers so a chord change *morphs*
  * through the figures between the two rather than cutting.
+ *
+ * The plate takes the shape of the window rather than staying square; see
+ * `aspect` on plateAt for how a rectangle gets a figure without one being
+ * stretched to fit it.
  */
 export interface PlateMode {
   n: number;
@@ -36,20 +40,52 @@ export interface PlateGradient {
 
 const PI = Math.PI;
 
-/** ψ and its gradient at one point. Analytic — no finite differences. */
-export function plateAt(u: number, v: number, mode: PlateMode, out: PlateGradient): void {
+/**
+ * ψ and its gradient at one point. Analytic — no finite differences.
+ *
+ * `aspect` is the plate's width over its height, and it scales the mode
+ * numbers along u rather than stretching the figure. That distinction is
+ * the whole reason it is a parameter.
+ *
+ * A plate that fills a landscape window is a rectangle, and there are two
+ * ways to put a figure on one. Stretching the square figure to fit makes
+ * every cell oblong and throws away the diagonal symmetry — the thing that
+ * makes a Chladni figure read as one, and the same symmetry the camera's
+ * plane lock exists to protect. Scaling the mode numbers instead keeps
+ * every cell square and simply puts more of them along the long axis,
+ * which is what a wider plate actually does: the wavelength is set by the
+ * plate's stiffness, not by the shape of the window you are watching it
+ * through.
+ *
+ * The identity that falls out is worth stating, because it is what
+ * guarantees no distortion: for a point at world (x, y) on a plate of
+ * half-height B and half-width aB,
+ *
+ *   plateAt(x / (aB), y / B, mode, out, a) === plateAt(x / B, y / B, mode, out, 1)
+ *
+ * — the same figure at the same scale, seen over a wider stretch of plate.
+ */
+export function plateAt(
+  u: number,
+  v: number,
+  mode: PlateMode,
+  out: PlateGradient,
+  aspect = 1,
+): void {
   const { n, m } = mode;
-  const cnu = Math.cos(n * PI * u);
+  const nu = n * aspect;
+  const mu = m * aspect;
+  const cnu = Math.cos(nu * PI * u);
   const cmv = Math.cos(m * PI * v);
-  const cmu = Math.cos(m * PI * u);
+  const cmu = Math.cos(mu * PI * u);
   const cnv = Math.cos(n * PI * v);
-  const snu = Math.sin(n * PI * u);
+  const snu = Math.sin(nu * PI * u);
   const smv = Math.sin(m * PI * v);
-  const smu = Math.sin(m * PI * u);
+  const smu = Math.sin(mu * PI * u);
   const snv = Math.sin(n * PI * v);
 
   out.psi = cnu * cmv - cmu * cnv;
-  out.du = -n * PI * snu * cmv + m * PI * smu * cnv;
+  out.du = -nu * PI * snu * cmv + mu * PI * smu * cnv;
   out.dv = -m * PI * cnu * smv + n * PI * cmu * snv;
 }
 
