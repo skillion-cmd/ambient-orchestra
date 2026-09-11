@@ -38,9 +38,10 @@ Flows that matter:
 - Mode: the Drift/Calibrate/Play toggle is `#mode-toggle` (three buttons,
   in that order); body has `data-mode`. Knob persistence writes `ao-knobs`
   (Calibrate and Play, debounced 500ms).
-- Right-rail toggles (`#rail-right-toggle`): theme button says the
-  *destination* ("Dark field" when light), same for Field/Currents
-  ("Currents" when in field mode).
+- Top-centre view toggles (`#view-toggle`, revealed on start like
+  `#mode-toggle`): a three-button visual group (`Ink | Currents |
+  Resonance`, the active one carrying `is-active`) and the theme button,
+  which says its *destination* ("Dark field" when light).
 - Seed localStorage via `page.addInitScript` to test stored-calibration
   paths (`ao-knobs`, `ao-mode`, `ao-theme`, `ao-visual-mode`).
 - Movements draw a random length and pulse profile, so most paths are
@@ -73,9 +74,15 @@ Flows that matter:
   - Preset row is `.play-presets button`; the tuning toggle, octave steppers
     and the Behind/With/Front blend row are each a `.play-row` (`.play-blend`
     for the last). Panel state persists to `ao-play`
-    (`{presetId, tuning, octaveShift, blend}`); learned MIDI bindings to
-    `ao-midi-map`. Both seed cleanly via `page.addInitScript`. A stored state
-    from before `blend` existed backfills rather than resetting.
+    (`{presetId, tuning, octaveShift, blend, voiceMode}`); learned MIDI
+    bindings to `ao-midi-map`. Both seed cleanly via `page.addInitScript`. A
+    stored state from before `blend` or `voiceMode` existed backfills rather
+    than resetting.
+  - Melody / Beat is `.play-voice-mode button`. In Beat the preset and tuning
+    rows are `hidden`, `.play-kit-legend` is shown, and `.play-notes` reports
+    the pieces just struck (`Kick · Hat`) rather than pitches — they decay
+    after ~1.6s, so read it right after the key-down. The kit is laid out
+    from C: `a` is the kick, `d` the snare, `f`/`g` the hats.
   - Restoring `ao-mode: 'play'` from storage arms the keybed on load, so a
     seeded Play session answers typed keys without touching the mode toggle.
 
