@@ -122,14 +122,14 @@ field, the same room, but with a polyphonic instrument at the front of it.
 
 ### UI
 
-Two edge rails frame an open center, each pairing live data with the knobs that drive it:
+Two edge rails frame an open center, each pairing live data with the knobs that drive it — and in Play the center is where the instrument stands:
 
 - **Left rail — Audio:** movement / phase readout, a **cymatics panel** (scrolling waveform, beat markers, bass/mid/high spectrum, live key + mode + chord function, and a console-style ensemble meter), and the audio knob grid
 - **Right rail — Visual:** form readout, a **visual scope** (particle population, ghost↔body layer balance, cool↔warm mood, fog depth), and the visual knob grid
 - **Top centre — what you are looking at:** the Ink / Currents / Resonance switch and the light / dark field toggle, mirroring Drift / Calibrate / Play at the bottom. Outside the rails, so both stay reachable in Drift
 - **10 knobs** — six sound, four vision (see below)
 - **Piece picker (Calibrate only)** — choose a length and a world and play that piece now, instead of waiting for two weighted draws to agree. Drift keeps its unpredictability; direct control belongs to Calibrate
-- **Play panel (Play only)** — the instrument's own surface in the same slot: Melody / Beat, connected controller, eight voices (or the kit legend), the in-key / chromatic toggle with the field's live key beside it, octave, what is sounding, and a two-octave on-screen keyboard
+- **Play stage (Play only)** — the instrument stands in the middle of the screen, above the mode switch and clear of both rails: Melody / Beat, connected controller, eight voices (or the black-key kit legend), the in-key / chromatic toggle, octave, blend, the field's live key, what is sounding in full size, and a two-octave keyboard wide enough to hit. The rails keep what they are for — the engine, and the knobs that steer it
 - **Knob automator** — slow, phrase-aligned autonomous drift when you leave the controls alone
 - **PerfMonitor** — a dev-only health gate (press **D**) reporting frame rate, audio-context health, console errors, and heap growth
 - **Error overlay** — a clear message if WebGL or audio fails to start

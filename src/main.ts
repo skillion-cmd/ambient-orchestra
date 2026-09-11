@@ -43,6 +43,7 @@ const leftData = document.getElementById('rail-left-data')!;
 const leftKnobs = document.getElementById('rail-left-knobs')!;
 const rightData = document.getElementById('rail-right-data')!;
 const rightKnobs = document.getElementById('rail-right-knobs')!;
+const playStage = document.getElementById('play-stage')!;
 const viewToggleSlot = document.getElementById('view-toggle')!;
 const modeToggleSlot = document.getElementById('mode-toggle')!;
 const overlay = document.getElementById('overlay')!;
@@ -161,7 +162,11 @@ playController.setOctave(initialPlay.octaveShift);
 audioEngine.setBlend(initialPlay.blend);
 audioEngine.setPlayVoiceMode(initialPlay.voiceMode);
 playPanel.setStatus('idle', null);
-leftData.appendChild(playPanel.element);
+// Centre stage, not in the rail. The rails are for watching the engine work;
+// the instrument is the thing you are actually using in Play, and it was the
+// one surface here you had to hunt for. CSS hides the stage in the other two
+// modes, the way it always hid the panel.
+playStage.appendChild(playPanel.element);
 
 // ——— Right rail: visual ———
 const visualScope = new VisualScope(rightData, () => visualizer?.requestNextForm());
@@ -339,6 +344,7 @@ startBtn.addEventListener('click', async () => {
     railRight.hidden = false;
     modeToggleSlot.hidden = false;
     viewToggleSlot.hidden = false;
+    playStage.hidden = false;
     cymaticsOverlay.show();
   } catch (err) {
     const msg =

@@ -81,46 +81,59 @@ export class PlayPanel {
     // the hand that is using it.
     this.element.addEventListener('dblclick', (e) => e.stopPropagation());
 
-    this.element.appendChild(label('Instrument'));
-
     this.deviceLine = document.createElement('div');
     this.deviceLine.className = 'play-device';
-    this.element.appendChild(this.deviceLine);
 
     this.connectButton = document.createElement('button');
     this.connectButton.type = 'button';
     this.connectButton.className = 'play-connect';
     this.connectButton.textContent = 'Connect a controller';
     this.connectButton.addEventListener('click', () => this.handlers.onConnectMidi());
-    this.element.appendChild(this.connectButton);
 
-    this.element.appendChild(this.buildVoiceModeRow());
+    // Who you are playing on, in one line across the top.
+    const head = section('play-head');
+    head.append(label('Instrument'), this.deviceLine, this.connectButton);
+
+    // What you are playing with: the half of the orchestra, then the voice
+    // within it, then how the keys are laid out.
+    const voices = section('play-voices');
     this.presetRows = this.buildPresetRows();
     this.tuningRow = this.buildTuningRow();
     this.kitLegend = this.buildKitLegend();
-    this.element.append(this.presetRows, this.tuningRow, this.kitLegend);
+    voices.append(
+      this.buildVoiceModeRow(),
+      this.presetRows,
+      this.kitLegend,
+      this.tuningRow,
+    );
+
+    this.octaveValue = document.createElement('span');
+    const settings = section('play-settings');
+    settings.append(this.buildOctaveRow(), this.buildBlendRow());
 
     this.keyLine = document.createElement('div');
     this.keyLine.className = 'play-key';
-    this.element.appendChild(this.keyLine);
 
-    // What is sounding sits high in the panel, next to the key it is sounding
-    // in. It is the one line you glance at mid-phrase, so it must not be the
-    // thing that scrolls out of the rail when the panel runs long.
+    // What is sounding is the one line you glance at mid-phrase, so it sits
+    // directly above the keys rather than anywhere it has to be found.
     this.noteLine = document.createElement('div');
     this.noteLine.className = 'play-notes';
-    this.element.appendChild(this.noteLine);
 
     // Directly under what you are playing, because it is the answer to it.
     this.followLine = document.createElement('div');
     this.followLine.className = 'play-follow';
-    this.element.appendChild(this.followLine);
 
-    this.octaveValue = document.createElement('span');
-    this.element.appendChild(this.buildOctaveRow());
-    this.element.appendChild(this.buildBlendRow());
-    this.element.appendChild(this.buildKeyboard());
-    this.element.appendChild(this.buildLearnSection());
+    const readout = section('play-readout');
+    readout.append(this.keyLine, this.noteLine, this.followLine);
+
+    this.element.append(
+      head,
+      voices,
+      settings,
+      readout,
+      this.buildKeyboard(),
+      this.buildLearnSection(),
+    );
 
     this.syncPresets();
     this.syncTuning();
@@ -280,17 +293,20 @@ export class PlayPanel {
   }
 
   /**
-   * What each key hits in Beat mode.
+   * The five pieces a key cap can't name for itself.
    *
-   * Named by pitch class rather than by key cap, because the layout repeats
-   * every octave and because the same panel serves a MIDI controller, a
-   * QWERTY keybed and the keys drawn underneath it — C is the one thing all
-   * three agree on.
+   * The white caps carry their own labels in Beat mode, which leaves the
+   * black ones — a quarter of the width, and no room for a word. Named by
+   * pitch class rather than by which key on your particular keyboard,
+   * because the layout repeats every octave and the same panel serves a
+   * MIDI controller, a QWERTY keybed and the keys drawn underneath it. C is
+   * the one thing all three agree on.
    */
   private buildKitLegend(): HTMLElement {
     const legend = document.createElement('div');
     legend.className = 'play-kit-legend';
     KIT_LAYOUT.forEach((id, semitone) => {
+      if (!isBlackKey(60 + semitone)) return;
       const cell = document.createElement('span');
       cell.textContent = `${PITCH_CLASSES[semitone]} ${KIT_LABELS[id]}`;
       legend.appendChild(cell);
@@ -314,13 +330,16 @@ export class PlayPanel {
     this.kitLegend.hidden = !beat;
     this.element.classList.toggle('is-beat', beat);
     // The on-screen keys say what they do in each mode: a pitch when they
-    // are pitched, a drum when they are drums.
+    // are pitched, a drum when they are drums. The white caps say it out
+    // loud — a kit is a layout you learn by looking at it once, and playing
+    // one from a legend above the keys means reading instead of playing.
     for (const [note, key] of this.keyElements) {
-      key.setAttribute(
-        'aria-label',
-        beat ? KIT_LABELS[kitPieceFor(note)] : midiToNoteName(note),
-      );
-      key.title = beat ? KIT_LABELS[kitPieceFor(note)] : '';
+      const piece = KIT_LABELS[kitPieceFor(note)];
+      key.setAttribute('aria-label', beat ? piece : midiToNoteName(note));
+      key.title = beat ? piece : '';
+      if (!key.classList.contains('is-black')) {
+        key.textContent = beat ? piece : '';
+      }
     }
   }
 
@@ -345,7 +364,7 @@ export class PlayPanel {
 
   private buildTuningRow(): HTMLElement {
     const row = document.createElement('div');
-    row.className = 'play-row';
+    row.className = 'play-row play-tuning';
     for (const tuning of ['scale', 'chromatic'] as PlayTuning[]) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -553,6 +572,12 @@ export class PlayPanel {
 
 /** Pitch-class names for the kit legend, sharps to match the black caps. */
 const PITCH_CLASSES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+function section(className: string): HTMLElement {
+  const element = document.createElement('div');
+  element.className = className;
+  return element;
+}
 
 function label(text: string): HTMLElement {
   const element = document.createElement('div');

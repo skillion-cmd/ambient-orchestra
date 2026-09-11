@@ -556,21 +556,113 @@ body[data-mode='play'] .piece-picker {
 }
 
 
-/* ——— Play panel (Play only) ——— */
-/* The instrument's own surface. It takes the piece picker's place in the
-   left rail rather than sitting beside it — one mode, one panel. */
-body[data-mode='drift'] .play-panel,
-body[data-mode='calibrate'] .play-panel {
+/* ——— Play stage (Play only) ——— */
+/* The instrument stands in the middle of the screen, above the mode switch
+   and clear of both rails. It lived in the left rail first, under the
+   readouts, which is where a *readout* belongs — but this is the one
+   surface in the app you are playing rather than watching, and in the rail
+   it was a column of 9px controls you had to go and find. The rails keep
+   what they are for: the engine, and the knobs that steer it. */
+body[data-mode='drift'] .play-stage,
+body[data-mode='calibrate'] .play-stage {
+  display: none;
+}
+
+.play-stage {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  /* Above the Drift/Calibrate/Play switch, which stays reachable. */
+  bottom: 52px;
+  /* Wide enough for a keyboard you can actually hit, and never so wide it
+     reaches under a rail: the rails are 268px each. */
+  width: clamp(300px, calc(100vw - 596px), 760px);
+  max-height: calc(100vh - 130px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ao-text) 22%, transparent) transparent;
+  z-index: 14;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--ao-border);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ao-overlay) 94%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.play-stage[hidden] {
   display: none;
 }
 
 .play-panel {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--ao-border);
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 11px;
+}
+
+/* Who you are playing on: the label, the device, and the way to change it,
+   on one line so the instrument itself starts at the top of the panel. */
+.play-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.play-head .play-device {
+  flex: 1 1 auto;
+}
+
+/* What you are playing with. The voice-mode switch and the tuning toggle
+   are two buttons each and keep their width; the voices in between take
+   whatever is left. */
+.play-voices {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.play-voices .play-voice-mode,
+.play-voices .play-tuning {
+  flex: 0 0 auto;
+}
+
+.play-voices .play-presets,
+.play-voices .play-kit-legend {
+  flex: 1 1 260px;
+}
+
+.play-voices .play-presets {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.play-voices .play-kit-legend {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.play-settings {
+  display: flex;
+  gap: 10px;
+}
+
+.play-settings .play-blend {
+  flex: 1 1 auto;
+}
+
+/* The octave stepper is a value with a button either side, not a row that
+   wants space — stretched across half the stage its two buttons end up a
+   hand's width apart. */
+.play-settings .play-octave {
+  flex: 0 0 190px;
+}
+
+/* The readout sits directly above the keys: what key the field is in, what
+   your hands are sounding, and what the ensemble has done about it. */
+.play-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 0;
+  text-align: center;
 }
 
 .play-panel-label {
@@ -596,7 +688,12 @@ body[data-mode='calibrate'] .play-panel {
 /* What is sounding is the one line you glance at mid-phrase — it gets the
    full-contrast ink, and dims only while the orchestra is back in front. */
 .play-notes {
-  min-height: 13px;
+  min-height: 22px;
+  /* The size difference is the point: everything else on the stage is a
+     control you set and forget, and this is the line you read while your
+     hands are busy. */
+  font-size: 15px;
+  letter-spacing: 0.14em;
   color: var(--ao-text);
   font-variant-numeric: tabular-nums;
 }
@@ -647,7 +744,8 @@ body[data-mode='calibrate'] .play-panel {
 }
 
 .play-connect {
-  align-self: flex-start;
+  align-self: center;
+  flex: 0 0 auto;
 }
 
 .play-presets {
@@ -685,6 +783,7 @@ body[data-mode='calibrate'] .play-panel {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 2px 6px;
+  align-self: center;
   font-size: 8px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -713,7 +812,7 @@ body[data-mode='calibrate'] .play-panel {
    boundaries between them, so neither can push the other out of true. */
 .play-keyboard {
   position: relative;
-  height: 44px;
+  height: 104px;
   user-select: none;
   touch-action: none;
 }
@@ -727,7 +826,17 @@ body[data-mode='calibrate'] .play-panel {
   flex: 1 1 0;
   min-width: 0;
   height: 100%;
-  padding: 0;
+  padding: 0 0 5px;
+  /* Beat mode writes the piece on the cap; in Melody the caps are empty and
+     this does nothing. */
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+  font-size: 7px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ao-text-muted);
   border: 1px solid var(--ao-border);
   background: color-mix(in srgb, var(--ao-text) 4%, transparent);
   cursor: pointer;
@@ -737,7 +846,9 @@ body[data-mode='calibrate'] .play-panel {
 .play-key-cap.is-black {
   position: absolute;
   top: 0;
-  width: 9px;
+  /* A share of the keyboard rather than a fixed width — about half a white
+     key, as on a real one, at whatever width the stage ends up. */
+  width: 3.4%;
   height: 62%;
   /* `left` is the boundary itself; pull back by half to straddle it. */
   transform: translateX(-50%);
@@ -776,7 +887,7 @@ body[data-mode='calibrate'] .play-panel {
 
 .play-learn-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(8, 1fr);
   gap: 3px;
   margin-bottom: 5px;
 }

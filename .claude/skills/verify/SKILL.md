@@ -58,9 +58,11 @@ Flows that matter:
   queues the choice and triggers the usual dissolve-and-skip, so allow ~25s
   before the new piece reports in the readout.
 
-- Play mode (`.play-panel`, the picker's slot, hidden in Drift and
-  Calibrate). Playwright cannot present a MIDI device, so the computer
-  keyboard is the automatable path — everything below works headless:
+- Play mode (`.play-panel` inside `#play-stage` — fixed centre-screen above
+  the mode toggle, revealed on start like `#mode-toggle`, hidden in Drift and
+  Calibrate; it is no longer in the left rail). Playwright cannot present a
+  MIDI device, so the computer keyboard is the automatable path — everything
+  below works headless:
   - Notes: `page.keyboard.down('a')` etc. on the tracker layout (`a s d f g
     h j k l ;` white, `w e t y u o p` black, `z`/`x` octave). `.play-notes`
     reports the *sounded* pitches, which in the default in-key tuning are
@@ -78,11 +80,12 @@ Flows that matter:
     bindings to `ao-midi-map`. Both seed cleanly via `page.addInitScript`. A
     stored state from before `blend` or `voiceMode` existed backfills rather
     than resetting.
-  - Melody / Beat is `.play-voice-mode button`. In Beat the preset and tuning
-    rows are `hidden`, `.play-kit-legend` is shown, and `.play-notes` reports
-    the pieces just struck (`Kick · Hat`) rather than pitches — they decay
-    after ~1.6s, so read it right after the key-down. The kit is laid out
-    from C: `a` is the kick, `d` the snare, `f`/`g` the hats.
+  - Melody / Beat is `.play-voice-mode button`. In Beat the preset, tuning and
+    octave rows are `hidden`, the white key caps carry their piece as text,
+    `.play-kit-legend` names the five black-key pieces, and `.play-notes`
+    reports the pieces just struck (`Kick · Hat`) rather than pitches — they
+    decay after ~1.6s, so read it right after the key-down. The kit is laid
+    out from C: `a` is the kick, `d` the snare, `f`/`g` the hats.
   - Restoring `ao-mode: 'play'` from storage arms the keybed on load, so a
     seeded Play session answers typed keys without touching the mode toggle.
 
