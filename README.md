@@ -118,6 +118,21 @@ field, the same room, but with a polyphonic instrument at the front of it.
 - **Audio-reactive** — FFT spectrum deforms tube paths and thickness; harmonic swell drives fog, camera, and pulse
 - **Focus balance** — crossfade ghost vs body presence from 70/30 to 50/50 to 30/70
 - **Three visuals, one field** — *Ink* is the layered ghost/body world above; *Currents* is a wind map, streamline particles advected through an audio-shaped curl-noise field; *Resonance* is a **Chladni plate**, grains settling onto the nodal lines of a standing wave. All three read the same audio and the same harmonic context
+- **One drive, three readings** — every field works from a single reading of
+  the piece (`FieldDrive`): the Art Director's focus arc and fog breathing,
+  the palette mood, and one shared vocabulary of events — a strike, a phrase
+  closing, the breath drawn before a gesture, the field thrown open, and the
+  doorway. Each visual answers the same event in its own terms rather than
+  listening for its own private subset, so switching mode changes the noun
+  and not the language. A phrase closing is a ring through the ink, a band of
+  brighter air crossing the wind map, and a softer second strike on the
+  plate; the inhale contracts Ink and drops the wind, and on the plate does
+  the opposite — a still plate draws its figure sharply. Crossing between
+  rooms is the largest strike the piece has, and now reaches all three
+  instead of only moving the camera
+- **A played chord marks the field** — Play's note attack is part of the same
+  drive, so the instrument blooms whichever visual is on screen: playing the
+  orchestra leaves a mark on the room rather than only in the mix
 - **Resonance answers the harmony, not the level** — the plate's mode numbers come from the chord being held (the third of the chord sets one, the top of it the other), so a chord change is a figure change and the plate is showing you the interval. Ensemble gestures strike it: the grains jump and the figure reassembles. The camera settles square onto it, because a figure read at an angle shears into an unreadable diamond
 
 ### UI

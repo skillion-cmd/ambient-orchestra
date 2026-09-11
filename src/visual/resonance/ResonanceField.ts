@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { AudioFeatures, HarmonicContext, VisualKnobs } from '../../audio/types';
 import { getThemePalette, type SceneTheme } from '../ScenePalette';
+import type { FieldDrive } from '../FieldDrive';
 import { applyGhostTheme, createGhostMaterial, type GhostMaterial } from '../three/ghostMaterial';
 import { modeForChord, plateAt, type PlateGradient, type PlateMode } from './plate';
 
@@ -62,14 +63,9 @@ export class ResonanceField {
   /** Held as floats so a chord change morphs between figures. */
   private readonly mode: PlateMode = { n: 3, m: 5 };
   private target: PlateMode = { n: 3, m: 5 };
-  /** Decaying strike energy — the plate having just been hit. */
-  private strike = 0;
-  private lastGestureId = -1;
-  private drive = 0;
+  private level = 0;
   private theme: SceneTheme;
   private activeCount = 0;
-  /** Art Director palette mood (-1 cool .. +1 warm); see GhostField. */
-  moodBlend = 0;
   private readonly tintedFog = new THREE.Color();
 
   constructor(parent: THREE.Object3D, theme: SceneTheme = 'light') {
@@ -110,8 +106,9 @@ export class ResonanceField {
     features: AudioFeatures,
     harmonic: HarmonicContext,
     knobs: VisualKnobs,
-    breathe: number,
+    drive: FieldDrive,
   ): void {
+    const breathe = drive.breathe;
     this.target = modeForChord(harmonic);
     // Morph rather than cut. Drift sets how fast the plate retunes: tight is
     // a figure that snaps to each chord, misty is one still on its way to
@@ -121,18 +118,10 @@ export class ResonanceField {
     this.mode.m += (this.target.m - this.mode.m) * retune;
 
     // The plate is struck by the ensemble, not by the level: a gesture, a
-    // beat, or walking through the doorway.
-    if (harmonic.gestureId !== this.lastGestureId) {
-      this.lastGestureId = harmonic.gestureId;
-      this.strike = Math.min(1, this.strike + harmonic.ensemblePulse * 0.8 + 0.2);
-    }
-    this.strike = Math.max(
-      0,
-      Math.max(this.strike - dt * 0.9, harmonic.beatPulse * 0.45 + harmonic.doorwayPulse * 0.7),
-    );
-
-    const driveTarget = features.overall * 0.6 + features.mids * 0.25 + features.bass * 0.15;
-    this.drive += (driveTarget - this.drive) * (1 - Math.exp(-dt / 0.35));
+    // beat, or walking through the doorway. That envelope is the shared
+    // drive's now, so the same hit lights the ink and gusts the wind map.
+    const levelTarget = features.overall * 0.6 + features.mids * 0.25 + features.bass * 0.15;
+    this.level += (levelTarget - this.level) * (1 - Math.exp(-dt / 0.35));
 
     const aliveTarget = Math.min(
       CAPACITY,
@@ -141,19 +130,29 @@ export class ResonanceField {
 
     const dark = this.theme === 'dark';
     const mat = this.material.uniforms;
-    // Focus trades a fine dusting for coarser, heavier grains.
-    mat.uSizeScale.value = 0.19 * (0.7 + knobs.focus * 0.9) * (0.75 + knobs.grain * 0.4);
-    mat.uAlpha.value = (dark ? 0.34 : 0.32) * (0.85 + knobs.focus * 0.4);
-    mat.uFogDensity.value = (dark ? 0.03 : 0.028) * (0.6 + knobs.fog * 0.8);
+    // Focus trades a fine dusting for coarser, heavier grains — from the
+    // drive, so the director's focus arc reaches the plate too.
+    mat.uSizeScale.value = 0.19 * (0.7 + drive.focus * 0.9) * (0.75 + knobs.grain * 0.4);
+    mat.uAlpha.value = (dark ? 0.34 : 0.32) * (0.85 + drive.focus * 0.4);
+    mat.uFogDensity.value = (dark ? 0.03 : 0.028) * drive.fog;
     this.tintedFog.copy(getThemePalette(this.theme).ghostFog);
-    const tint = this.moodBlend * 0.04;
+    const tint = drive.mood * 0.04;
     this.tintedFog.r = Math.max(0, Math.min(1, this.tintedFog.r + tint));
     this.tintedFog.b = Math.max(0, Math.min(1, this.tintedFog.b - tint));
     mat.uFogColor.value.copy(this.tintedFog);
 
     // How hard the grains are thrown about, and how fast they settle back.
-    const agitation = (0.03 + this.drive * 0.38 + this.strike * 0.75) * (0.4 + knobs.ripple * 1.2);
-    const settle = 3.2 + knobs.drift * 2.6;
+    // A phrase closing is a second, softer strike; the field thrown open
+    // scatters the plate wide.
+    let agitation =
+      (0.03 + this.level * 0.38 + drive.strike * 0.75 + drive.ripple * 0.35 + drive.expand * 0.5) *
+      (0.4 + knobs.ripple * 1.2);
+    // The inhale does the opposite here to everywhere else, and it should:
+    // the breath before a gesture is the plate going still, and a still
+    // plate is one that draws its figure sharply. Ink contracts, the wind
+    // map drops, and Resonance comes into focus — one event, three readings.
+    agitation *= 1 - drive.inhale * 0.6;
+    const settle = (3.2 + knobs.drift * 2.6) * (1 + drive.inhale * 0.8);
 
     let alive = 0;
     for (const g of this.pool) if (g.active) alive++;

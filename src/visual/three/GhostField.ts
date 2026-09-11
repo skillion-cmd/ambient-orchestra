@@ -6,6 +6,7 @@ import { TAU } from '../AudioFeatures';
 import type { FluidState } from '../FluidField';
 import { resolveVisualKnobs, type VisualKnobParams } from '../VisualKnobParams';
 import type { LayerBalance } from '../LayerBalance';
+import type { FieldDrive } from '../FieldDrive';
 import { layerScale } from '../LayerBalance';
 import { createGhostMaterial, applyGhostTheme, type GhostMaterial } from './ghostMaterial';
 import { getThemePalette, type SceneTheme } from '../ScenePalette';
@@ -65,7 +66,7 @@ export class GhostField {
   private time = 0;
   private swell = 0;
   private zSpread = 1;
-  private lastGestureId = 0;
+  private lastStrikeId = -1;
   private lastSurpriseFlash = 0;
   private lastPhase: MovementPhase = 'drift';
   private rippleT = 0;
@@ -73,12 +74,8 @@ export class GhostField {
   private cadenceWaveRadius = 0;
   private params = resolveVisualKnobs(DEFAULT_KNOBS.visual);
   private theme: SceneTheme = 'light';
-  /** Art Director fog scaling (1 = neutral); see ArtDirectorSkill */
-  fogMultiplier = 1;
   /** Decaying constellation strength — coherent emergent shape (0–1) */
   private constellationT = 0;
-  /** Art Director palette mood (-1 cool .. +1 warm) */
-  moodBlend = 0;
   private readonly tintedFog = new THREE.Color();
 
   constructor(parent: THREE.Group, theme: SceneTheme = 'light') {
@@ -107,9 +104,10 @@ export class GhostField {
     features: AudioFeatures,
     harmonic: HarmonicContext,
     knobs: VisualKnobs,
-    breathe: number,
+    drive: FieldDrive,
     balance: LayerBalance,
   ): VisualKnobParams {
+    const breathe = drive.breathe;
     this.params = resolveVisualKnobs(knobs);
     this.time += dt;
     this.fieldAngle += dt * (this.params.fieldRotation + state.flowRate * 0.12);
@@ -118,10 +116,13 @@ export class GhostField {
     const ensembleZ = harmonic.ensemblePulse * 2.2;
     this.zSpread += (1 + ensembleZ - this.zSpread) * (1 - Math.exp(-dt / 0.35));
 
-    if (harmonic.gestureId !== this.lastGestureId) {
-      this.lastGestureId = harmonic.gestureId;
+    // A strike now includes the doorway, so crossing between rooms lights
+    // the ink the way an ensemble swell does rather than only moving the
+    // camera.
+    if (drive.strikeId !== this.lastStrikeId) {
+      this.lastStrikeId = drive.strikeId;
       for (const g of this.pool) {
-        if (g.active) g.heat = Math.min(1, g.heat + harmonic.ensemblePulse * 0.35);
+        if (g.active) g.heat = Math.min(1, g.heat + drive.strike * 0.35);
       }
     }
 
@@ -131,11 +132,11 @@ export class GhostField {
     this.lastSurpriseFlash = harmonic.surpriseFlash;
     this.rippleT = Math.max(0, this.rippleT - dt * 0.55);
 
-    if (harmonic.cadenceRipple > 0.65 && this.lastCadenceRipple <= 0.35) {
+    if (drive.ripple > 0.65 && this.lastCadenceRipple <= 0.35) {
       this.cadenceWaveRadius = 0;
     }
-    this.lastCadenceRipple = harmonic.cadenceRipple;
-    if (harmonic.cadenceRipple > 0.02) {
+    this.lastCadenceRipple = drive.ripple;
+    if (drive.ripple > 0.02) {
       this.cadenceWaveRadius += dt * 10.5;
     } else {
       this.cadenceWaveRadius *= 0.9;
@@ -157,8 +158,8 @@ export class GhostField {
     this.syncPopulation(target, harmonic.movementPhase);
 
     const mat = this.material.uniforms;
-    const inhale = harmonic.inhaleGesture;
-    const spaceThrow = harmonic.spaceThrowGesture;
+    const inhale = drive.inhale;
+    const spaceThrow = drive.expand;
     mat.uAlpha.value =
       this.params.dotAlpha *
       (1.55 + state.ghostMix * 0.9) *
@@ -166,13 +167,12 @@ export class GhostField {
       (0.5 + ghostScale * 0.9) *
       (1 + spaceThrow * 0.55) *
       (1 - inhale * 0.22);
-    mat.uFogDensity.value =
-      (0.04 + knobs.drift * 0.028 + spaceThrow * 0.012) * this.fogMultiplier;
+    mat.uFogDensity.value = (0.04 + knobs.drift * 0.028 + spaceThrow * 0.012) * drive.fog;
     mat.uSizeScale.value =
       this.params.sizeScale * (1 + spaceThrow * 0.7) * (1 - inhale * 0.24);
     // Warm/cool palette tint from the Art Director — subtle hue offset.
     this.tintedFog.copy(getThemePalette(this.theme).ghostFog);
-    const tint = this.moodBlend * 0.04;
+    const tint = drive.mood * 0.04;
     this.tintedFog.r = Math.max(0, Math.min(1, this.tintedFog.r + tint));
     this.tintedFog.b = Math.max(0, Math.min(1, this.tintedFog.b - tint));
     mat.uFogColor.value.copy(this.tintedFog);
@@ -182,8 +182,8 @@ export class GhostField {
     let i = 0;
     for (const g of this.pool) {
       if (!g.active) continue;
-      this.advanceGhost(g, dt, features, breathe, harmonic);
-      this.writeGhost(i, g, dt, breathe, harmonic);
+      this.advanceGhost(g, dt, features, breathe, drive);
+      this.writeGhost(i, g, dt, breathe, drive);
       i++;
     }
 
@@ -238,11 +238,11 @@ export class GhostField {
     g: Ghost,
     dt: number,
     breathe: number,
-    harmonic: HarmonicContext,
+    drive: FieldDrive,
   ): void {
-    const inhale = harmonic.inhaleGesture;
-    const spaceThrow = harmonic.spaceThrowGesture;
-    const cadence = harmonic.cadenceRipple;
+    const inhale = drive.inhale;
+    const spaceThrow = drive.expand;
+    const cadence = drive.ripple;
 
     let r = g.anchorR * (0.82 + breathe * 0.22);
     r *= 1 - inhale * 0.26;
@@ -300,7 +300,7 @@ export class GhostField {
     dt: number,
     features: AudioFeatures,
     breathe: number,
-    harmonic: HarmonicContext,
+    drive: FieldDrive,
   ): void {
     const rate =
       (1 / g.loopPeriod) *
@@ -354,8 +354,8 @@ export class GhostField {
       this.params.waveSpikeScale *
       spikeScale;
 
-    if (harmonic.ensemblePulse > 0.2) {
-      g.heat = Math.min(1, g.heat + harmonic.ensemblePulse * dt * 0.4);
+    if (drive.strike > 0.2) {
+      g.heat = Math.min(1, g.heat + drive.strike * dt * 0.4);
     }
   }
 
