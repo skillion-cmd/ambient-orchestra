@@ -5,9 +5,9 @@ import { EMPTY_GROUP_ACTIVITY, MODE_SCALES } from '../../audio/types';
 
 const grad = (): PlateGradient => ({ psi: 0, du: 0, dv: 0 });
 
-function psiAt(u: number, v: number, mode: PlateMode): number {
+function psiAt(u: number, v: number, mode: PlateMode, aspect = 1): number {
   const out = grad();
-  plateAt(u, v, mode, out);
+  plateAt(u, v, mode, out, aspect);
   return out.psi;
 }
 
@@ -72,6 +72,10 @@ describe('plateAt', () => {
     }
   });
 
+  // The diagonal symmetry belongs to the square. A rectangular plate has no
+  // 90-degree rotation to be symmetric under, which is exactly why the mode
+  // numbers scale with the aspect instead of the figure being stretched into
+  // one — the cells stay square even though the plate is not.
   it('is antisymmetric across the diagonal — the figures are symmetric', () => {
     const mode: PlateMode = { n: 2, m: 7 };
     for (const [u, v] of [
@@ -80,6 +84,56 @@ describe('plateAt', () => {
       [-0.44, 0.67],
     ] as const) {
       expect(psiAt(v, u, mode)).toBeCloseTo(-psiAt(u, v, mode), 12);
+    }
+  });
+
+  it('keeps its gradient honest on a rectangular plate too', () => {
+    const mode: PlateMode = { n: 3, m: 5 };
+    const a = 1.78;
+    const h = 1e-5;
+    for (const [u, v] of [
+      [0.13, -0.27],
+      [-0.62, 0.41],
+      [0.78, 0.78],
+    ] as const) {
+      const out = grad();
+      plateAt(u, v, mode, out, a);
+      expect(out.du).toBeCloseTo((psiAt(u + h, v, mode, a) - psiAt(u - h, v, mode, a)) / (2 * h), 3);
+      expect(out.dv).toBeCloseTo((psiAt(u, v + h, mode, a) - psiAt(u, v - h, mode, a)) / (2 * h), 3);
+    }
+  });
+
+  it('shows more of the same figure on a wider plate, never a stretched one', () => {
+    // The claim the aspect parameter exists to make: a point at world (x, y)
+    // on a plate of half-height B and half-width aB sees exactly what the
+    // square plate has at (x/B, y/B). Same figure, same scale, more plate.
+    const mode: PlateMode = { n: 3, m: 5 };
+    const B = 2.4;
+    for (const a of [1.33, 1.78, 2.4, 0.6]) {
+      for (const [x, y] of [
+        [0.4, -1.1],
+        [-2.0, 0.7],
+        [1.55, 1.9],
+        [0, 0],
+      ] as const) {
+        const wide = psiAt(x / (a * B), y / B, mode, a);
+        const square = psiAt(x / B, y / B, mode, 1);
+        expect(wide).toBeCloseTo(square, 12);
+      }
+    }
+  });
+
+  it('keeps both mirror symmetries at any aspect — the figure still reads', () => {
+    const mode: PlateMode = { n: 2, m: 7 };
+    for (const a of [1, 1.78, 0.75]) {
+      for (const [u, v] of [
+        [0.3, -0.8],
+        [0.95, 0.1],
+        [-0.44, 0.67],
+      ] as const) {
+        expect(psiAt(-u, v, mode, a)).toBeCloseTo(psiAt(u, v, mode, a), 12);
+        expect(psiAt(u, -v, mode, a)).toBeCloseTo(psiAt(u, v, mode, a), 12);
+      }
     }
   });
 

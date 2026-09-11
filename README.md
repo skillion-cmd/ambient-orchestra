@@ -144,6 +144,18 @@ field, the same room, but with a polyphonic instrument at the front of it.
   drive, so the instrument blooms whichever visual is on screen: playing the
   orchestra leaves a mark on the room rather than only in the mix
 - **Resonance answers the harmony, not the level** — the plate's mode numbers come from the chord being held (the third of the chord sets one, the top of it the other), so a chord change is a figure change and the plate is showing you the interval. Ensemble gestures strike it: the grains jump and the figure reassembles. The camera settles square onto it, because a figure read at an angle shears into an unreadable diamond
+- **The plate is the shape of the window** — its bounds are measured from the
+  camera frustum, so it fills the screen at any size or aspect and reflows
+  live as the window changes, instead of sitting as a fixed square with a
+  third of a landscape window empty either side. A wide plate is filled by
+  scaling the *mode numbers* with the aspect rather than stretching the
+  figure: the cells stay square and there is simply more plate to put them
+  on, which is what a wider plate actually does. Past about 16:9 the
+  compensation caps and the remainder arrives as a gentle stretch — beyond
+  that the nodal lines crowd closer than a grain can draw, and a figure you
+  cannot read is worse than one slightly wider than it is tall. Grain count
+  follows the plate's area, so a bigger figure is drawn at the same weight
+  rather than thinning out
 
 ### UI
 

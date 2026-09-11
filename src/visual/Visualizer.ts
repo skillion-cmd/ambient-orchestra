@@ -18,10 +18,20 @@ import { ExtrusionField } from './three/ExtrusionField';
 import { GhostField } from './three/GhostField';
 import { TrailPass } from './three/TrailPass';
 import { CurrentsField } from './currents/CurrentsField';
-import { ResonanceField } from './resonance/ResonanceField';
+import { PLANE_Z as RESONANCE_PLANE_Z, ResonanceField } from './resonance/ResonanceField';
 import { loadStoredVisualMode, type VisualMode } from './VisualMode';
 
 const MAX_DPR = 1.5;
+
+/**
+ * Where the camera sits when nothing is pulling it. The plate is sized
+ * against this, so the two have to be one number — a camera that rested
+ * somewhere else would frame a plate cut to fit a place it never is.
+ */
+const CAMERA_REST_Z = 15.5;
+
+/** How much of the frustum the plate fills, leaving it edges to be seen by. */
+const PLATE_FILL = 0.94;
 
 export type VisualizerInitResult = 'ok' | 'webgl-unavailable';
 
@@ -149,8 +159,23 @@ export class Visualizer {
       // a flat figure read head-on, and the world scale would push most of
       // it out of frame.
       this.resonance = new ResonanceField(this.scene, this.theme);
+      this.syncPlateExtent();
     }
     return this.resonance;
+  }
+
+  /**
+   * Cut the plate to the window. The frustum at the plate's depth is what
+   * "fits the screen" actually means here, so it is measured rather than
+   * guessed: a fixed square left a third of a landscape window empty on
+   * either side.
+   */
+  private syncPlateExtent(): void {
+    if (!this.resonance) return;
+    const distance = CAMERA_REST_Z - RESONANCE_PLANE_Z;
+    const halfHeight =
+      Math.tan((this.camera.fov * Math.PI) / 360) * distance * PLATE_FILL;
+    this.resonance.setExtent(halfHeight * this.camera.aspect, halfHeight);
   }
 
   setTheme(theme: SceneTheme): void {
@@ -185,6 +210,7 @@ export class Visualizer {
     this.camera.aspect = this.width / Math.max(1, this.height);
     this.camera.updateProjectionMatrix();
     this.trailPass.resize(this.canvas.width, this.canvas.height);
+    this.syncPlateExtent();
   }
 
   update(
@@ -256,7 +282,7 @@ export class Visualizer {
     this.cameraDrift += dt * (0.08 + knobs.drift * 0.12);
     const inhale = drive.inhale;
     const spaceThrow = drive.expand;
-    const camR = 15.5 + state.swell * 1.8 - inhale * 2.5 + spaceThrow * 1.8;
+    const camR = CAMERA_REST_Z + state.swell * 1.8 - inhale * 2.5 + spaceThrow * 1.8;
 
     // A figure has to be looked at square. The orbit that makes the ink
     // field feel like a space you are moving through shears a Chladni

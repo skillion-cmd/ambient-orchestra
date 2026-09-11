@@ -6,21 +6,48 @@ import { moodChroma } from '../Chroma';
 import { applyGhostTheme, createGhostMaterial, type GhostMaterial } from '../three/ghostMaterial';
 import { modeForChord, plateAt, type PlateGradient, type PlateMode } from './plate';
 
-const CAPACITY = 4000;
+/**
+ * Grains at the baseline square plate, and the ceiling once a wide window
+ * asks for a bigger one. The target scales with the plate's area so that
+ * density — grains per unit of plate — is the same whatever the window is
+ * doing; a wider plate with the same grain count would simply draw the
+ * same figure fainter.
+ */
+const GRAINS_PER_SQUARE = 4000;
+const CAPACITY = 8000;
 
 /**
- * The plate is square, and small enough to be seen whole.
+ * The plate takes the shape of the window.
  *
- * Unlike the currents plane — deliberately oversized, because a wind map
- * has no edges and you are looking at part of one — a Chladni figure is a
- * single object with a shape, and half of one is not the figure. These
- * bounds put the whole plate inside the frustum at the camera's resting
- * distance, with margin on a wide window, which is also what a plate looks
- * like: a square on a bench, not a wall.
+ * It used to be a fixed square, which meant a landscape window framed it
+ * with a third of the screen empty on either side. It is still a single
+ * object seen whole — the bounds come from the camera frustum with a
+ * margin, so the edges stay on screen and it reads as a plate on a bench
+ * rather than a wall — but the bench is now as wide as the room.
+ *
+ * Filling that width is the job of the mode aspect rather than a stretch:
+ * see plateAt. The figure is never distorted, there is simply more plate
+ * to put it on.
  */
-const BOUND_X = 2.4;
-const BOUND_Y = 2.4;
-const PLANE_Z = 9;
+const BASE_HALF_EXTENT = 2.4;
+export const PLANE_Z = 9;
+
+/**
+ * How far the mode numbers will follow the window before the figure is
+ * allowed to stretch instead.
+ *
+ * Scaling the modes keeps the cells square, but it also multiplies the
+ * nodal lines, and past a point they crowd closer than a grain can draw:
+ * an ultrawide window at full compensation turned the outer thirds of the
+ * plate into fine texture rather than a figure. Beyond this the plate
+ * keeps taking the full width and the residual arrives as a gentle
+ * stretch, which costs a little cell squareness and keeps the lines
+ * resolvable — the right way round, because a figure you cannot read is
+ * worse than one slightly wider than it is tall.
+ *
+ * 1.9 covers 16:9 and 16:10 exactly, so the common cases are undistorted.
+ */
+const MAX_MODE_ASPECT = 1.9;
 
 interface Grain {
   x: number;
@@ -61,6 +88,8 @@ export class ResonanceField {
   private readonly velocities = new Float32Array(CAPACITY * 2);
   private readonly sizes = new Float32Array(CAPACITY);
   private readonly grad: PlateGradient = { psi: 0, du: 0, dv: 0 };
+  private boundX = BASE_HALF_EXTENT;
+  private boundY = BASE_HALF_EXTENT;
   /** Held as floats so a chord change morphs between figures. */
   private readonly mode: PlateMode = { n: 3, m: 5 };
   private target: PlateMode = { n: 3, m: 5 };
@@ -90,6 +119,17 @@ export class ResonanceField {
   setTheme(theme: SceneTheme): void {
     this.theme = theme;
     applyGhostTheme(this.material, theme, getThemePalette(theme).ghostFog);
+  }
+
+  /**
+   * Resize the plate to the window. Grains already on it keep their world
+   * positions: those now outside the plate are re-scattered by the escape
+   * check on the next frame, and the figure redraws around them, so a
+   * window drag reshapes the plate rather than restarting it.
+   */
+  setExtent(halfWidth: number, halfHeight: number): void {
+    this.boundX = Math.max(0.5, halfWidth);
+    this.boundY = Math.max(0.5, halfHeight);
   }
 
   getActiveCount(): number {
@@ -123,9 +163,13 @@ export class ResonanceField {
     const levelTarget = features.overall * 0.6 + features.mids * 0.25 + features.bass * 0.15;
     this.level += (levelTarget - this.level) * (1 - Math.exp(-dt / 0.35));
 
+    // Grains per unit of plate, not grains per plate: a window twice as
+    // wide gets twice the sand, so the figure is drawn at the same weight
+    // rather than thinning out as it grows.
+    const area = (this.boundX * this.boundY) / (BASE_HALF_EXTENT * BASE_HALF_EXTENT);
     const aliveTarget = Math.min(
       CAPACITY,
-      Math.floor(CAPACITY * (0.32 + knobs.grain * 0.68) * (0.6 + breathe * 0.4)),
+      Math.floor(GRAINS_PER_SQUARE * area * (0.32 + knobs.grain * 0.68) * (0.6 + breathe * 0.4)),
     );
 
     const dark = this.theme === 'dark';
@@ -136,6 +180,13 @@ export class ResonanceField {
     mat.uAlpha.value = (dark ? 0.34 : 0.32) * (0.85 + drive.focus * 0.4);
     mat.uFogDensity.value = (dark ? 0.03 : 0.028) * drive.fog;
     moodChroma(drive.mood, mat.uChroma.value);
+
+    // Square cells where the window is a shape the modes can follow; past
+    // that, a gentle stretch rather than lines too fine to read.
+    const modeAspect = Math.max(
+      1 / MAX_MODE_ASPECT,
+      Math.min(MAX_MODE_ASPECT, this.boundX / this.boundY),
+    );
 
     // How hard the grains are thrown about, and how fast they settle back.
     // A phrase closing is a second, softer strike; the field thrown open
@@ -183,9 +234,9 @@ export class ResonanceField {
         this.scatter(g);
       }
 
-      const u = g.x / BOUND_X;
-      const v = g.y / BOUND_Y;
-      plateAt(u, v, this.mode, this.grad);
+      const u = g.x / this.boundX;
+      const v = g.y / this.boundY;
+      plateAt(u, v, this.mode, this.grad, modeAspect);
       const { psi, du, dv } = this.grad;
       const mag = Math.hypot(du, dv);
       const prevX = g.x;
@@ -202,8 +253,8 @@ export class ResonanceField {
         // step.
         const k = Math.min(0.4, settle * dt);
         const toLine = (k * psi) / (mag * mag);
-        g.x -= toLine * du * BOUND_X;
-        g.y -= toLine * dv * BOUND_Y;
+        g.x -= toLine * du * this.boundX;
+        g.y -= toLine * dv * this.boundY;
       }
 
       // The plate's own motion. Strongest at the antinodes, which is why the
@@ -214,7 +265,7 @@ export class ResonanceField {
       // A grain shaken off the plate is gone, and a new one is sprinkled on.
       // Clamping instead would park it against the edge, where it is not
       // settled on anything and reads as a frame around the figure.
-      if (Math.abs(g.x) > BOUND_X || Math.abs(g.y) > BOUND_Y) this.scatter(g);
+      if (Math.abs(g.x) > this.boundX || Math.abs(g.y) > this.boundY) this.scatter(g);
 
       const j = i * 3;
       this.positions[j] = g.x;
@@ -244,8 +295,8 @@ export class ResonanceField {
 
   /** Drop a grain somewhere new on the plate. */
   private scatter(g: Grain): void {
-    g.x = (Math.random() * 2 - 1) * BOUND_X;
-    g.y = (Math.random() * 2 - 1) * BOUND_Y;
+    g.x = (Math.random() * 2 - 1) * this.boundX;
+    g.y = (Math.random() * 2 - 1) * this.boundY;
     g.z = PLANE_Z + (Math.random() * 2 - 1) * 0.25;
     g.life = 6 + Math.random() * 14;
     g.size = 0.6 + Math.random() * 0.7;
