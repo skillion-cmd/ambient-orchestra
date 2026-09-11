@@ -133,16 +133,23 @@ describe('knob persistence', () => {
 
 describe('stored play state', () => {
   it('round-trips', () => {
-    storePlayState({ presetId: 'bell', tuning: 'chromatic', octaveShift: -1, blend: 'front' });
+    storePlayState({
+      presetId: 'bell',
+      tuning: 'chromatic',
+      octaveShift: -1,
+      blend: 'front',
+      voiceMode: 'beat',
+    });
     expect(loadStoredPlayState()).toEqual({
       presetId: 'bell',
       tuning: 'chromatic',
       octaveShift: -1,
       blend: 'front',
+      voiceMode: 'beat',
     });
   });
 
-  it('backfills a blend saved before the control existed', () => {
+  it('backfills a blend and a voice mode saved before either existed', () => {
     localStorage.setItem(
       'ao-play',
       JSON.stringify({ presetId: 'choir', tuning: 'scale', octaveShift: 0 }),
@@ -152,7 +159,22 @@ describe('stored play state', () => {
       tuning: 'scale',
       octaveShift: 0,
       blend: 'with',
+      voiceMode: 'melody',
     });
+  });
+
+  it('backfills rather than resets when the voice mode is corrupt', () => {
+    localStorage.setItem(
+      'ao-play',
+      JSON.stringify({
+        presetId: 'choir',
+        tuning: 'scale',
+        octaveShift: 0,
+        blend: 'with',
+        voiceMode: 'drums please',
+      }),
+    );
+    expect(loadStoredPlayState()?.voiceMode).toBe('melody');
   });
 
   it('backfills rather than resets when the blend is corrupt', () => {

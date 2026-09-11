@@ -17,6 +17,7 @@ import { ExtrusionField } from './three/ExtrusionField';
 import { GhostField } from './three/GhostField';
 import { TrailPass } from './three/TrailPass';
 import { CurrentsField } from './currents/CurrentsField';
+import { ResonanceField } from './resonance/ResonanceField';
 import { loadStoredVisualMode, type VisualMode } from './VisualMode';
 
 const MAX_DPR = 1.5;
@@ -38,6 +39,8 @@ export class Visualizer {
   private readonly bodies: ExtrusionField;
   /** Wind-map currents layer — built lazily on the first switch. */
   private currents: CurrentsField | null = null;
+  /** Chladni plate layer — also lazy; most sessions never ask for it. */
+  private resonance: ResonanceField | null = null;
   private visualMode: VisualMode;
   private readonly spectrumScratch = new Float32Array(64);
   private readonly trailBg = new THREE.Color();
@@ -47,6 +50,8 @@ export class Visualizer {
   private cameraDrift = 0;
   private breathe = 0.5;
   private artFocusOffset = 0;
+  /** 0 = the ink field's orbit, 1 = square onto the resonance plate. */
+  private planeLock = 0;
   private artFogMultiplier = 1;
   private visualParams: VisualKnobParams = resolveVisualKnobs(DEFAULT_KNOBS.visual);
 
@@ -78,6 +83,7 @@ export class Visualizer {
     this.bodies.setTheme(theme);
     this.visualMode = loadStoredVisualMode();
     if (this.visualMode === 'currents') this.ensureCurrents();
+    if (this.visualMode === 'resonance') this.ensureResonance();
     this.resize();
   }
 
@@ -99,6 +105,7 @@ export class Visualizer {
     this.artFogMultiplier = d.fogMultiplier;
     this.ghosts.moodBlend = d.moodBlend;
     if (this.currents) this.currents.moodBlend = d.moodBlend;
+    if (this.resonance) this.resonance.moodBlend = d.moodBlend;
     this.artFocusOffset = d.focusOffset;
     if (d.constellationTrigger) this.ghosts.triggerConstellation();
   }
@@ -107,6 +114,7 @@ export class Visualizer {
     if (mode === this.visualMode) return;
     this.visualMode = mode;
     if (mode === 'currents') this.ensureCurrents();
+    if (mode === 'resonance') this.ensureResonance();
   }
 
   getVisualMode(): VisualMode {
@@ -123,6 +131,16 @@ export class Visualizer {
     return this.currents;
   }
 
+  private ensureResonance(): ResonanceField {
+    if (!this.resonance) {
+      // Scene-level for the same reason the currents plane is: the plate is
+      // a flat figure read head-on, and the world scale would push most of
+      // it out of frame.
+      this.resonance = new ResonanceField(this.scene, this.theme);
+    }
+    return this.resonance;
+  }
+
   setTheme(theme: SceneTheme): void {
     if (theme === this.theme) return;
     this.theme = theme;
@@ -135,6 +153,7 @@ export class Visualizer {
     this.ghosts.setTheme(theme);
     this.bodies.setTheme(theme);
     this.currents?.setTheme(theme);
+    this.resonance?.setTheme(theme);
   }
 
   getTheme(): SceneTheme {
@@ -202,9 +221,13 @@ export class Visualizer {
     if (sceneFog) sceneFog.density = getThemePalette(this.theme).fogDensity * fogK;
 
     const inCurrents = this.visualMode === 'currents' && this.currents;
+    const inResonance = this.visualMode === 'resonance' && this.resonance;
     if (inCurrents) {
       this.visualParams = resolveVisualKnobs(knobs);
       this.currents!.update(dt, features, harmonic, knobs, this.breathe);
+    } else if (inResonance) {
+      this.visualParams = resolveVisualKnobs(knobs);
+      this.resonance!.update(dt, features, harmonic, knobs, this.breathe);
     } else {
       this.visualParams = this.ghosts.update(
         dt,
@@ -222,10 +245,22 @@ export class Visualizer {
     const inhale = harmonic.inhaleGesture;
     const spaceThrow = harmonic.spaceThrowGesture;
     const camR = 15.5 + state.swell * 1.8 - inhale * 2.5 + spaceThrow * 1.8;
-    this.camera.position.x = Math.sin(this.cameraDrift * 0.35) * 2.8;
-    this.camera.position.y = 0.4 + Math.sin(this.cameraDrift * 0.22) * 1.15 + features.mids * 0.4;
+
+    // A figure has to be looked at square. The orbit that makes the ink
+    // field feel like a space you are moving through shears a Chladni
+    // figure into an unreadable diamond — the symmetry *is* the image, and
+    // it only reads head-on. So in Resonance the camera settles onto the
+    // plate's axis, keeping a fraction of the drift so it is still a camera
+    // and not a screenshot. Eased rather than switched, so changing mode
+    // glides rather than cuts.
+    this.planeLock += ((inResonance ? 1 : 0) - this.planeLock) * (1 - Math.exp(-dt / 1.4));
+    const orbit = 1 - this.planeLock * 0.88;
+
+    this.camera.position.x = Math.sin(this.cameraDrift * 0.35) * 2.8 * orbit;
+    this.camera.position.y =
+      (0.4 + Math.sin(this.cameraDrift * 0.22) * 1.15 + features.mids * 0.4) * orbit;
     this.camera.position.z = camR + Math.cos(this.cameraDrift * 0.18) * 1.0;
-    this.camera.lookAt(0, state.swell * 0.3, 0);
+    this.camera.lookAt(0, state.swell * 0.3 * orbit, 0);
 
     // Cap the zoom so large windows stay framed-out like small ones — more of
     // the field stays visible (denser, busier composition) instead of zooming
@@ -235,15 +270,21 @@ export class Visualizer {
       baseScale * (1 - inhale * 0.15 + spaceThrow * 0.22),
     );
 
-    this.ghosts.group.visible = !inCurrents && balance.ghostWeight > 0.08;
-    this.bodies.group.visible = !inCurrents && balance.bodyWeight > 0.08;
+    const inPlane = inCurrents || inResonance;
+    this.ghosts.group.visible = !inPlane && balance.ghostWeight > 0.08;
+    this.bodies.group.visible = !inPlane && balance.bodyWeight > 0.08;
     if (this.currents) this.currents.group.visible = !!inCurrents;
+    if (this.resonance) this.resonance.group.visible = !!inResonance;
 
-    // Currents lean on the trail buffer much harder — the streaks ARE the
-    // visual — so the trails knob gets a lower fade floor there.
+    // Currents lean on the trail buffer hardest — the streaks ARE the
+    // visual. Resonance wants the opposite: a figure is a still image, and
+    // long trails smear the nodal lines into a fog. It takes the shortest
+    // persistence of the three, enough to soften the grain and no more.
     const baseTrail = inCurrents
       ? 0.01 + (1 - knobs.trails) * 0.07
-      : this.visualParams.trailFade * (0.38 + balance.ghostWeight * 0.34);
+      : inResonance
+        ? 0.12 - knobs.trails * 0.07
+        : this.visualParams.trailFade * (0.38 + balance.ghostWeight * 0.34);
     const trailFade =
       baseTrail * (1 + inhale * 2.8) * Math.max(0.35, 1 - spaceThrow * 0.45);
     const rt = this.trailPass.beginFrame(trailFade);
@@ -257,15 +298,21 @@ export class Visualizer {
     this.trailPass.dispose();
     this.ghosts.dispose();
     this.currents?.dispose();
+    this.resonance?.dispose();
     this.renderer.dispose();
   }
 
   getReadoutState(harmonic: HarmonicContext) {
     const body = this.bodies.getReadoutState(harmonic);
     const inCurrents = this.visualMode === 'currents' && this.currents;
+    const inResonance = this.visualMode === 'resonance' && this.resonance;
     return {
       ...body,
-      particleCount: inCurrents ? this.currents!.getActiveCount() : this.ghosts.getActiveCount(),
+      particleCount: inCurrents
+        ? this.currents!.getActiveCount()
+        : inResonance
+          ? this.resonance!.getActiveCount()
+          : this.ghosts.getActiveCount(),
       particleTarget: Math.floor(this.visualParams.particleTarget * (0.55 + this.breathe * 0.45)),
     };
   }

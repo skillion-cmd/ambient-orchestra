@@ -1,5 +1,6 @@
 import type { HarmonicContext } from '../audio/types';
-import { PLAY_BLENDS, type PlayBlendId } from '../audio/PlayBlend';
+import { PLAY_BLENDS, type PlayBlendId, type PlayVoiceMode } from '../audio/PlayBlend';
+import { KIT_LABELS, KIT_LAYOUT, kitPieceFor } from '../audio/PlayKit';
 import type { PlayTuning } from '../audio/PlayMapping';
 import { isBlackKey, midiToNoteName } from '../audio/PlayMapping';
 import { PLAY_PRESETS } from '../audio/PlayPresets';
@@ -11,6 +12,8 @@ export interface PlayPanelState {
   tuning: PlayTuning;
   octaveShift: number;
   blend: PlayBlendId;
+  /** Melody or Beat — which half of the orchestra the keys play. */
+  voiceMode: PlayVoiceMode;
 }
 
 export interface PlayPanelHandlers {
@@ -19,6 +22,8 @@ export interface PlayPanelHandlers {
   onOctave(shift: number): void;
   /** How far forward the instrument sits against the orchestra. */
   onBlend(blend: PlayBlendId): void;
+  /** Swap the keybed between the voices and the kit. */
+  onVoiceMode(mode: PlayVoiceMode): void;
   /** A click or touch on the on-screen keyboard. */
   onNoteOn(midiNote: number, velocity: number): void;
   onNoteOff(midiNote: number): void;
@@ -48,9 +53,14 @@ export class PlayPanel {
   private readonly followLine: HTMLElement;
   private readonly connectButton: HTMLButtonElement;
   private readonly presetButtons = new Map<string, HTMLButtonElement>();
+  private readonly voiceModeButtons = new Map<PlayVoiceMode, HTMLButtonElement>();
+  private presetRows!: HTMLElement;
+  private tuningRow!: HTMLElement;
+  private kitLegend!: HTMLElement;
   private readonly tuningButtons = new Map<PlayTuning, HTMLButtonElement>();
   private readonly blendButtons = new Map<PlayBlendId, HTMLButtonElement>();
   private readonly octaveValue: HTMLElement;
+  private octaveRow!: HTMLElement;
   private readonly keyElements = new Map<number, HTMLElement>();
   private readonly learnButtons = new Map<string, HTMLButtonElement>();
   private state: PlayPanelState;
@@ -71,48 +81,65 @@ export class PlayPanel {
     // the hand that is using it.
     this.element.addEventListener('dblclick', (e) => e.stopPropagation());
 
-    this.element.appendChild(label('Instrument'));
-
     this.deviceLine = document.createElement('div');
     this.deviceLine.className = 'play-device';
-    this.element.appendChild(this.deviceLine);
 
     this.connectButton = document.createElement('button');
     this.connectButton.type = 'button';
     this.connectButton.className = 'play-connect';
     this.connectButton.textContent = 'Connect a controller';
     this.connectButton.addEventListener('click', () => this.handlers.onConnectMidi());
-    this.element.appendChild(this.connectButton);
 
-    this.element.appendChild(this.buildPresetRows());
-    this.element.appendChild(this.buildTuningRow());
+    // Who you are playing on, in one line across the top.
+    const head = section('play-head');
+    head.append(label('Instrument'), this.deviceLine, this.connectButton);
+
+    // What you are playing with: the half of the orchestra, then the voice
+    // within it, then how the keys are laid out.
+    const voices = section('play-voices');
+    this.presetRows = this.buildPresetRows();
+    this.tuningRow = this.buildTuningRow();
+    this.kitLegend = this.buildKitLegend();
+    voices.append(
+      this.buildVoiceModeRow(),
+      this.presetRows,
+      this.kitLegend,
+      this.tuningRow,
+    );
+
+    this.octaveValue = document.createElement('span');
+    const settings = section('play-settings');
+    settings.append(this.buildOctaveRow(), this.buildBlendRow());
 
     this.keyLine = document.createElement('div');
     this.keyLine.className = 'play-key';
-    this.element.appendChild(this.keyLine);
 
-    // What is sounding sits high in the panel, next to the key it is sounding
-    // in. It is the one line you glance at mid-phrase, so it must not be the
-    // thing that scrolls out of the rail when the panel runs long.
+    // What is sounding is the one line you glance at mid-phrase, so it sits
+    // directly above the keys rather than anywhere it has to be found.
     this.noteLine = document.createElement('div');
     this.noteLine.className = 'play-notes';
-    this.element.appendChild(this.noteLine);
 
     // Directly under what you are playing, because it is the answer to it.
     this.followLine = document.createElement('div');
     this.followLine.className = 'play-follow';
-    this.element.appendChild(this.followLine);
 
-    this.octaveValue = document.createElement('span');
-    this.element.appendChild(this.buildOctaveRow());
-    this.element.appendChild(this.buildBlendRow());
-    this.element.appendChild(this.buildKeyboard());
-    this.element.appendChild(this.buildLearnSection());
+    const readout = section('play-readout');
+    readout.append(this.keyLine, this.noteLine, this.followLine);
+
+    this.element.append(
+      head,
+      voices,
+      settings,
+      readout,
+      this.buildKeyboard(),
+      this.buildLearnSection(),
+    );
 
     this.syncPresets();
     this.syncTuning();
     this.syncOctave();
     this.syncBlend();
+    this.syncVoiceMode();
   }
 
   getState(): PlayPanelState {
@@ -140,6 +167,11 @@ export class PlayPanel {
   setPreset(id: string): void {
     this.state.presetId = id;
     this.syncPresets();
+  }
+
+  setVoiceMode(mode: PlayVoiceMode): void {
+    this.state.voiceMode = mode;
+    this.syncVoiceMode();
   }
 
   setTuning(tuning: PlayTuning): void {
@@ -180,16 +212,18 @@ export class PlayPanel {
     }
 
     const keyText =
-      this.state.tuning === 'scale'
-        ? `${harmonic.root} ${harmonic.mode} — keys follow the field`
-        : `${harmonic.root} ${harmonic.mode} — chromatic`;
+      this.state.voiceMode === 'beat'
+        ? `${harmonic.root} ${harmonic.mode} — the kit is tuned to it`
+        : this.state.tuning === 'scale'
+          ? `${harmonic.root} ${harmonic.mode} — keys follow the field`
+          : `${harmonic.root} ${harmonic.mode} — chromatic`;
     if (keyText !== this.lastKeyLine) {
       this.keyLine.textContent = keyText;
       this.lastKeyLine = keyText;
     }
 
     const sounding = soundingNotes.length
-      ? soundingNotes.join(' ')
+      ? soundingNotes.join(this.state.voiceMode === 'beat' ? ' · ' : ' ')
       : ducked
         ? 'orchestra held back'
         : '—';
@@ -226,6 +260,89 @@ export class PlayPanel {
     this.followLine.classList.toggle('is-taken', follow.taken);
   }
 
+  /**
+   * Melody or Beat.
+   *
+   * The first row in the panel, above the voices, because it decides what
+   * every control under it means: in Beat the eight presets and the in-key
+   * toggle have nothing to act on, and a row of live-looking buttons that
+   * do nothing is worse than a row that isn't there.
+   */
+  private buildVoiceModeRow(): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'play-row play-voice-mode';
+    const modes: { mode: PlayVoiceMode; label: string; hint: string }[] = [
+      { mode: 'melody', label: 'Melody', hint: 'the keys play the orchestra\u2019s voices' },
+      { mode: 'beat', label: 'Beat', hint: 'the keys play the kit, one piece per key' },
+    ];
+    for (const { mode, label, hint } of modes) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.title = hint;
+      button.addEventListener('click', () => {
+        if (this.state.voiceMode === mode) return;
+        this.state.voiceMode = mode;
+        this.syncVoiceMode();
+        this.handlers.onVoiceMode(mode);
+      });
+      this.voiceModeButtons.set(mode, button);
+      row.appendChild(button);
+    }
+    return row;
+  }
+
+  /**
+   * The five pieces a key cap can't name for itself.
+   *
+   * The white caps carry their own labels in Beat mode, which leaves the
+   * black ones — a quarter of the width, and no room for a word. Named by
+   * pitch class rather than by which key on your particular keyboard,
+   * because the layout repeats every octave and the same panel serves a
+   * MIDI controller, a QWERTY keybed and the keys drawn underneath it. C is
+   * the one thing all three agree on.
+   */
+  private buildKitLegend(): HTMLElement {
+    const legend = document.createElement('div');
+    legend.className = 'play-kit-legend';
+    KIT_LAYOUT.forEach((id, semitone) => {
+      if (!isBlackKey(60 + semitone)) return;
+      const cell = document.createElement('span');
+      cell.textContent = `${PITCH_CLASSES[semitone]} ${KIT_LABELS[id]}`;
+      legend.appendChild(cell);
+    });
+    return legend;
+  }
+
+  private syncVoiceMode(): void {
+    const beat = this.state.voiceMode === 'beat';
+    for (const [mode, button] of this.voiceModeButtons) {
+      const active = mode === this.state.voiceMode;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', String(active));
+    }
+    this.presetRows.hidden = beat;
+    this.tuningRow.hidden = beat;
+    // The octave stepper transposes the melodic mapping; a drum is not
+    // transposed, it is a different drum, so in Beat the row would be a
+    // control that answers nothing.
+    this.octaveRow.hidden = beat;
+    this.kitLegend.hidden = !beat;
+    this.element.classList.toggle('is-beat', beat);
+    // The on-screen keys say what they do in each mode: a pitch when they
+    // are pitched, a drum when they are drums. The white caps say it out
+    // loud — a kit is a layout you learn by looking at it once, and playing
+    // one from a legend above the keys means reading instead of playing.
+    for (const [note, key] of this.keyElements) {
+      const piece = KIT_LABELS[kitPieceFor(note)];
+      key.setAttribute('aria-label', beat ? piece : midiToNoteName(note));
+      key.title = beat ? piece : '';
+      if (!key.classList.contains('is-black')) {
+        key.textContent = beat ? piece : '';
+      }
+    }
+  }
+
   private buildPresetRows(): HTMLElement {
     const wrap = document.createElement('div');
     wrap.className = 'play-presets';
@@ -247,7 +364,7 @@ export class PlayPanel {
 
   private buildTuningRow(): HTMLElement {
     const row = document.createElement('div');
-    row.className = 'play-row';
+    row.className = 'play-row play-tuning';
     for (const tuning of ['scale', 'chromatic'] as PlayTuning[]) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -314,6 +431,7 @@ export class PlayPanel {
 
     this.octaveValue.className = 'play-octave-value';
     row.append(down, this.octaveValue, up);
+    this.octaveRow = row;
     return row;
   }
 
@@ -450,6 +568,15 @@ export class PlayPanel {
     const shift = this.state.octaveShift;
     this.octaveValue.textContent = shift === 0 ? 'Octave 0' : `Octave ${shift > 0 ? '+' : ''}${shift}`;
   }
+}
+
+/** Pitch-class names for the kit legend, sharps to match the black caps. */
+const PITCH_CLASSES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+function section(className: string): HTMLElement {
+  const element = document.createElement('div');
+  element.className = className;
+  return element;
 }
 
 function label(text: string): HTMLElement {

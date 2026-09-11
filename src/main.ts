@@ -23,7 +23,7 @@ import {
 import { ModeToggle } from './ui/ModeToggle';
 import { PlayPanel } from './ui/PlayPanel';
 import { PlayController } from './input/PlayController';
-import { DEFAULT_BLEND_ID } from './audio/PlayBlend';
+import { DEFAULT_BLEND_ID, DEFAULT_VOICE_MODE } from './audio/PlayBlend';
 import { DEFAULT_PRESET_ID, findPreset } from './audio/PlayPresets';
 import { VisualModeToggle } from './ui/VisualModeToggle';
 import { loadStoredVisualMode } from './visual/VisualMode';
@@ -43,7 +43,8 @@ const leftData = document.getElementById('rail-left-data')!;
 const leftKnobs = document.getElementById('rail-left-knobs')!;
 const rightData = document.getElementById('rail-right-data')!;
 const rightKnobs = document.getElementById('rail-right-knobs')!;
-const rightToggleSlot = document.getElementById('rail-right-toggle')!;
+const playStage = document.getElementById('play-stage')!;
+const viewToggleSlot = document.getElementById('view-toggle')!;
 const modeToggleSlot = document.getElementById('mode-toggle')!;
 const overlay = document.getElementById('overlay')!;
 const errorOverlay = document.getElementById('error-overlay')!;
@@ -105,6 +106,7 @@ const playPanel = new PlayPanel(
     tuning: storedPlay?.tuning ?? 'scale',
     octaveShift: storedPlay?.octaveShift ?? 0,
     blend: storedPlay?.blend ?? DEFAULT_BLEND_ID,
+    voiceMode: storedPlay?.voiceMode ?? DEFAULT_VOICE_MODE,
   },
   {
     onPreset: (id) => {
@@ -121,6 +123,10 @@ const playPanel = new PlayPanel(
     },
     onBlend: (blend) => {
       audioEngine.setBlend(blend);
+      savePlayState();
+    },
+    onVoiceMode: (voiceMode) => {
+      playController.setVoiceMode(voiceMode);
       savePlayState();
     },
     onNoteOn: (note, velocity) => playController.noteOn(note, velocity),
@@ -154,12 +160,25 @@ playController.setPreset(initialPlay.presetId);
 playController.setTuning(initialPlay.tuning);
 playController.setOctave(initialPlay.octaveShift);
 audioEngine.setBlend(initialPlay.blend);
+audioEngine.setPlayVoiceMode(initialPlay.voiceMode);
 playPanel.setStatus('idle', null);
-leftData.appendChild(playPanel.element);
+// Centre stage, not in the rail. The rails are for watching the engine work;
+// the instrument is the thing you are actually using in Play, and it was the
+// one surface here you had to hunt for. CSS hides the stage in the other two
+// modes, the way it always hid the panel.
+playStage.appendChild(playPanel.element);
 
 // ——— Right rail: visual ———
 const visualScope = new VisualScope(rightData, () => visualizer?.requestNextForm());
 rightKnobs.appendChild(controls.visualElement);
+
+// ——— Top centre: what you are looking at ———
+// Which visual and which field, in the open above the canvas rather than in
+// the right rail — they are the two switches you reach for while watching,
+// and in Drift the rail that used to hold them isn't there.
+const visualModeToggle = new VisualModeToggle(loadStoredVisualMode(), (visualMode) => {
+  visualizer?.setVisualMode(visualMode);
+});
 
 const themeToggle = new ThemeToggle(initialTheme, (theme) => {
   // Store the preference; applyFieldTheme decides what the field actually
@@ -167,12 +186,7 @@ const themeToggle = new ThemeToggle(initialTheme, (theme) => {
   storeTheme(theme);
   applyFieldTheme(audioEngine.getHarmonicContext().character);
 });
-rightToggleSlot.appendChild(themeToggle.element);
-
-const visualModeToggle = new VisualModeToggle(loadStoredVisualMode(), (visualMode) => {
-  visualizer?.setVisualMode(visualMode);
-});
-rightToggleSlot.appendChild(visualModeToggle.element);
+viewToggleSlot.append(visualModeToggle.element, themeToggle.element);
 
 /**
  * Night pieces pull the field dark for their duration.
@@ -283,11 +297,10 @@ function loop(now: number): void {
     visualizer.update(features, dt, controls.getKnobs().visual, harmonic, audioEngine.getSpectrum());
     cymaticsOverlay.update(features, harmonic, controls.getLastTouched());
     if (mode === 'play') {
-      const instrument = audioEngine.getPlayInstrument();
       playPanel.update(
         harmonic,
-        instrument.getHeldKeys(),
-        instrument.getSoundingNotes(),
+        audioEngine.getPlayHeldKeys(),
+        audioEngine.getPlaySounding(),
         audioEngine.getEnsembleDuckDepth(),
         audioEngine.getPlayFollow(),
       );
@@ -330,6 +343,8 @@ startBtn.addEventListener('click', async () => {
     railLeft.hidden = false;
     railRight.hidden = false;
     modeToggleSlot.hidden = false;
+    viewToggleSlot.hidden = false;
+    playStage.hidden = false;
     cymaticsOverlay.show();
   } catch (err) {
     const msg =

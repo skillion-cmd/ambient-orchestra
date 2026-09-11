@@ -58,6 +58,17 @@ field, the same room, but with a polyphonic instrument at the front of it.
   to the phase it lands in, in the ensemble's own voice, rather than a
   recording of you played back. It keeps it as a stored hook afterwards, so
   what you played resurfaces later the way the field's own hooks do
+- **Melody or Beat** — the same keybed plays either half of the orchestra. In
+  Beat it is a kit, twelve pieces to the octave laid out for a hand rather
+  than a scale: kick, snare, both hats, two toms and the ride on the white
+  keys, the sub, clap, shaker, rim and crackle on the black ones. The pitched
+  pieces take the field's current root, so a kick you play is in the key of
+  whatever is going on, and it takes the generative kit's own route into the
+  mix rather than the melodic instrument's — a drum wants neither the 90Hz
+  highpass that is most of a kick, nor a 14s reverb, nor a compressor where
+  every hit ducks the field. The duck flips with it: playing keys the melody
+  and air make room, playing drums it is the Conductor's beat that steps back
+  and the melody that stays put
 - **The orchestra makes room where you are** — the Conductor keeps composing,
   and the ensemble leans away in your register rather than everywhere: the
   melody and air voices share the keybed's range and step well back, the pads
@@ -106,16 +117,19 @@ field, the same room, but with a polyphonic instrument at the front of it.
 - **Morphology** — shape blends continuously with movement phase (network / sphere / waveform paths); no hard form cuts
 - **Audio-reactive** — FFT spectrum deforms tube paths and thickness; harmonic swell drives fog, camera, and pulse
 - **Focus balance** — crossfade ghost vs body presence from 70/30 to 50/50 to 30/70
+- **Three visuals, one field** — *Ink* is the layered ghost/body world above; *Currents* is a wind map, streamline particles advected through an audio-shaped curl-noise field; *Resonance* is a **Chladni plate**, grains settling onto the nodal lines of a standing wave. All three read the same audio and the same harmonic context
+- **Resonance answers the harmony, not the level** — the plate's mode numbers come from the chord being held (the third of the chord sets one, the top of it the other), so a chord change is a figure change and the plate is showing you the interval. Ensemble gestures strike it: the grains jump and the figure reassembles. The camera settles square onto it, because a figure read at an angle shears into an unreadable diamond
 
 ### UI
 
-Two edge rails frame an open center, each pairing live data with the knobs that drive it:
+Two edge rails frame an open center, each pairing live data with the knobs that drive it — and in Play the center is where the instrument stands:
 
 - **Left rail — Audio:** movement / phase readout, a **cymatics panel** (scrolling waveform, beat markers, bass/mid/high spectrum, live key + mode + chord function, and a console-style ensemble meter), and the audio knob grid
-- **Right rail — Visual:** form readout, a **visual scope** (particle population, ghost↔body layer balance, cool↔warm mood, fog depth), the theme toggle, and the visual knob grid
+- **Right rail — Visual:** form readout, a **visual scope** (particle population, ghost↔body layer balance, cool↔warm mood, fog depth), and the visual knob grid
+- **Top centre — what you are looking at:** the Ink / Currents / Resonance switch and the light / dark field toggle, mirroring Drift / Calibrate / Play at the bottom. Outside the rails, so both stay reachable in Drift
 - **10 knobs** — six sound, four vision (see below)
 - **Piece picker (Calibrate only)** — choose a length and a world and play that piece now, instead of waiting for two weighted draws to agree. Drift keeps its unpredictability; direct control belongs to Calibrate
-- **Play panel (Play only)** — the instrument's own surface in the same slot: connected controller, eight voices, the in-key / chromatic toggle with the field's live key beside it, octave, what is sounding, and a two-octave on-screen keyboard
+- **Play stage (Play only)** — the instrument stands in the middle of the screen, above the mode switch and clear of both rails: Melody / Beat, connected controller, eight voices (or the black-key kit legend), the in-key / chromatic toggle, octave, blend, the field's live key, what is sounding in full size, and a two-octave keyboard wide enough to hit. The rails keep what they are for — the engine, and the knobs that steer it
 - **Knob automator** — slow, phrase-aligned autonomous drift when you leave the controls alone
 - **PerfMonitor** — a dev-only health gate (press **D**) reporting frame rate, audio-context health, console errors, and heap growth
 - **Error overlay** — a clear message if WebGL or audio fails to start
@@ -197,7 +211,8 @@ MIDI device profiles and learned bindings.
 |-------|--------|
 | **Double-click** or **F11** | Hide / show both rails (full-bleed view) |
 | **D** | Toggle the PerfMonitor health readout (Drift and Calibrate — in Play, D is a key) |
-| **Light field / Dark field** | Toggle visual palette (right rail header) |
+| **Ink / Currents / Resonance** | Switch visual (top centre) |
+| **Light field / Dark field** | Toggle visual palette (top centre) |
 | **A**–**;** / **W E T Y U O P** (Play) | Computer keybed — white keys and black keys |
 | **Z** / **X** (Play) | Shift the keybed down / up an octave |
 | **Mov** button | Advance movement phase |
@@ -254,7 +269,7 @@ src/
   audio/          ... PlayInstrument, PlayPresets, PlayMapping, PlayBlend
   input/          MidiInput, MidiMap, KeyboardInput, PlayController
   ui/             Controls, SessionReadout, CymaticsOverlay, VisualScope,
-                  KnobAutomator, ThemeToggle, PlayPanel
+                  KnobAutomator, ThemeToggle, VisualModeToggle, PlayPanel
   diagnostics/    PerfMonitor
 ```
 
@@ -263,6 +278,10 @@ src/
 - **Percussion is common, never assumed** — at rest about a third of movements draw a silent pulse profile and never hear one, a quarter take the felt-not-heard sub heartbeat, and the rest get a full kit. Tempo steers that hard, from a kit on a fifth of movements at the bottom of the knob to half of them at the top. A fragment never gets a kit: there is no room to establish a pattern and leave again
 - **Duration is structure** — a one-minute fragment next to a fifteen-minute epic is what makes a sequence read as composed rather than generated, so the length of a piece is drawn before its shape is
 - **Swell is balance, not volume** — the ambient curves carry everything one minute and sit near-inaudible under a melody or a texture the next, a swing of about 23dB. Every layer sits on a ring the focus point can reach the edge of, so each one both takes the front and falls all the way back; nothing rests at the centre where it could never recede. The front is never empty
+- **A beat receding is not the same as a pad receding** — the rotation's floor is per layer, because the layers don't mean the same thing. A pad at -22dB is the piece breathing out and you never notice it has gone; a beat at -22dB is the groove stopping and the piece losing the thread. The beat floors at -8dB and the sub at -11dB — pulled back, still keeping time — while the ambient layers keep the full depth
+- **Night pieces have sections** — sixteen bars at a time, the 2-step either holds its lurch or locks into four on the floor, weighted by phase so the crest of a piece is where the grid arrives. The lurch only reads as deliberate once you have heard what it is departing from. Every eighth bar takes a turnaround fill, which is what tells you where a section ended
+- **No two dips may multiply into a dropout** — the session arc, the long-form near-silence dip, the exhale vacuum gesture and the per-voice phase level are four independent things pulling the level down, and they reach their deepest at the same moment: the end of a piece. Together they hit about -20dB, which is not a piece breathing out, it is a piece stopping and starting again. Gestures now floor themselves against wherever the arc already is, and the dip stays out of the dissolve and the exhale
+- **A skip is a scheduling budget, not a synth** — Tone schedules from the main thread, looking a fixed distance ahead, so that window is the whole frame budget: anything that blocks longer than it lands its events in the past, where they are dropped rather than played late. Drift and Calibrate take a quarter second of headroom, which nobody can hear. Play goes tighter than the default, because there the number is how long after your finger the note speaks
 - **Two rooms, always** — the neighbouring room runs its own key, its own arc and its own voices behind a wall filter. Crossing the threshold hands its key to the main room and gives the neighbour a new one, and the swap happens at the point of deepest blur so it lands inside the smear rather than as a cut
 - Voices never all play at full volume simultaneously
 - **The bottom of the mix is guarded** — the pad and melody path is highpassed at 90Hz, but the two paths that carry the actual low end, the dry sub and the dry beat, take a shortcut past it on purpose. A 30Hz rumble filter before the master limiter is what stands under *them*: sub-audible energy never arrives as a note on any speaker anyone is likely to own, but it still moves the cone, still spends headroom, and still intermodulates with what you can hear — the whole mix going gritty on the low notes rather than just the low notes going gritty. The kick sits an octave above where it started, at 37–58Hz, the same range the deep-pressure sub works in: a kick you can hear land rather than one you can only feel the speaker fail to reproduce. Measured at the output, the band below 32Hz went from 3.6dB under the audible bass to about 12dB under it, while the audible bass got slightly louder
@@ -272,7 +291,7 @@ src/
 - **Playing is joining, not switching on** — an instrument that entered at unity next to layer buses sitting near half, and dropped the whole ensemble 10dB the instant a key went down, is a synth over a backing track that has been told to get out of the way. Every part of the mix answer is proportional instead: the level, the register the ensemble makes room in, how far it leans, and how much of the piece's own arc the instrument rides
 - **Two creative roles:** the Conductor Skill directs the audio (intensity, stereo image, flourish cadence) and the Art Director Skill directs the visuals (fog, focus, mood, constellations) — both read the same shared harmonic context, so picture and sound stay in step
 - **Visual palette:** strict depth-pass monochrome. Light field (`#ececec`) with dark ink ghosts is the default; dark field inverts to luminous ghosts on a deep `#08080f` ground, with bodies tinted into the same blue-black family
-- **Ink-in-water:** ghosts deposit semi-transparent strokes into a fade buffer each frame; older ink slowly bleaches back toward the field color — Drift toward Mist lengthens the dissolve
+- **Ink-in-water:** ghosts deposit semi-transparent strokes into a fade buffer each frame; older ink slowly bleaches back toward the field color — Drift toward Mist lengthens the dissolve. The buffer is half-float: it feeds back into itself every frame, and at 8 bits the convergence stalls once a pixel is within a few levels of the background, which printed a permanent ghost of the last image onto the mostly-empty Resonance plate
 - Ghosts carry motion and memory; bodies carry sculptural mass — **Focus** sets the mix
 
 ## License

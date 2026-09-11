@@ -10,13 +10,16 @@ import type { PieceRequest } from './HarmonicField';
 import { RoomWalk } from './RoomWalk';
 import { NeighbourRoom } from './NeighbourRoom';
 import { PlayInstrument } from './PlayInstrument';
+import { PlayKit } from './PlayKit';
 import {
   DEFAULT_BLEND_ID,
+  DEFAULT_VOICE_MODE,
   duckFor,
   findBlend,
   instrumentLevel,
   NO_DUCK,
   type PlayBlend,
+  type PlayVoiceMode,
 } from './PlayBlend';
 
 /** Mirrors the UI's AppMode without the audio layer reaching up into it. */
@@ -31,6 +34,48 @@ type EngineMode = 'drift' | 'calibrate' | 'play';
  * one, and the same threshold: a move this small is inaudible.
  */
 const DUCK_EPSILON = 0.006;
+
+/**
+ * The deepest the mix may go once everything that dips it has multiplied.
+ *
+ * Four separate things pull the level down and none of them knows about the
+ * others: the session arc (down to 0.2), the long-form near-silence dip
+ * (another 0.4 on top of that), a gesture like the exhale vacuum (0.38),
+ * and the per-voice phase boost (0.55 in exhale). Each is a good idea on its
+ * own. Stacked — and they stack precisely at the end of a piece, where all
+ * four are at their deepest at once — they reach about -20dB, which is not a
+ * piece breathing out, it is a piece stopping for a few seconds and then
+ * starting again. That is the "transition silence".
+ *
+ * So the gestures floor themselves against wherever the arc already is:
+ * -11.7dB is as far down as the arc and a gesture may go together. The
+ * gesture still happens — it is just measured from where the mix actually
+ * is rather than from the top.
+ */
+const MIN_MIX = 0.26;
+
+/**
+ * How far ahead of the audio clock events are scheduled.
+ *
+ * Tone schedules from the main thread: a timer wakes up, looks this far into
+ * the future, and hands the audio clock everything due in that window. Which
+ * means the window is the entire budget for a frame. Anything that blocks the
+ * main thread for longer than it — a garbage collection, a WebGL stall, the
+ * dozen nodes a voice builds when it enters — lands its events in the past,
+ * and an event in the past is not played late, it is dropped. That is the
+ * skip: not a synth misbehaving, a scheduler that was not given room.
+ *
+ * Tone's default 0.1s is a latency-first compromise, which is the wrong end
+ * of the trade for music that composes itself over fifteen minutes. Drift and
+ * Calibrate take a quarter of a second of headroom and nobody can tell.
+ *
+ * Play cannot: there the number is how long after your finger the note
+ * speaks, and 0.1 is already at the edge of what reads as an instrument
+ * rather than a lag. So Play goes the other way, tighter than the default,
+ * and accepts that a stall it can't absorb may cost a note.
+ */
+const AMBIENT_LOOKAHEAD = 0.25;
+const PLAY_LOOKAHEAD = 0.04;
 
 export class AudioEngine {
   private readonly padBus: Tone.Gain;
@@ -65,6 +110,13 @@ export class AudioEngine {
   private readonly playBus: Tone.Gain;
   private readonly playLimiter: Tone.Limiter;
   private readonly playInstrument: PlayInstrument;
+  /** The kit under your hands in Beat mode — its own dry path, see below. */
+  private readonly playKitBus: Tone.Gain;
+  private readonly playKitLimiter: Tone.Limiter;
+  private readonly playKitSend: Tone.Gain;
+  private readonly playKit: PlayKit;
+  private voiceMode: PlayVoiceMode = DEFAULT_VOICE_MODE;
+  private lastKitLevel = -1;
   /** True while play mode owns the front of the mix. */
   private playActive = false;
   private readonly playGlue: Tone.Compressor;
@@ -97,6 +149,10 @@ export class AudioEngine {
   private pokeAnchorActivity = DEFAULT_KNOBS.sound.activity;
   private featureFrame = 0;
   private cachedFeatures: AudioFeatures = { bass: 0, mids: 0, highs: 0, overall: 0 };
+  /** Reused spectrum scratch — see `getSpectrum`. */
+  private spectrumOut = new Float32Array(512);
+  /** Handed back when the analyser has nothing to give; never written to. */
+  private readonly emptySpectrum = new Float32Array(256);
   private readonly baseMasterGain = 0.8;
   private readonly baseDelayFeedback = 0.22;
   private readonly baseReverbWet = 0.42;
@@ -235,6 +291,23 @@ export class AudioEngine {
     this.playLimiter.connect(this.highpass);
     this.playInstrument = new PlayInstrument(this.playBus);
 
+    // The played kit takes the *generative* kit's route, not the
+    // instrument's: dry to the tilt EQ with its own limiter and a small
+    // parallel send into the reverb. A drum does not want the 90Hz highpass
+    // (which is most of a kick), a 14s reverb (which is mush) or the glue
+    // compressor (where every hit would duck the field), and those are
+    // exactly the three things the melodic instrument's path is fine with.
+    // Sitting where the Conductor's kit sits is also what makes the two read
+    // as one kit being shared rather than as a drum machine over a piece.
+    this.playKitBus = new Tone.Gain(0);
+    this.playKitLimiter = new Tone.Limiter(-6);
+    this.playKitBus.connect(this.playKitLimiter);
+    this.playKitLimiter.connect(this.tiltEQ);
+    this.playKitSend = new Tone.Gain(0.1);
+    this.playKitBus.connect(this.playKitSend);
+    this.playKitSend.connect(this.reverb);
+    this.playKit = new PlayKit(this.playKitBus);
+
     // Foundation weight: the Sub knob scales the sub drone (into the pad
     // bus) together with the deep-pressure path above.
     this.foundationBus = new Tone.Gain(1);
@@ -273,6 +346,7 @@ export class AudioEngine {
   async start(): Promise<void> {
     if (this.running) return;
     await Tone.start();
+    this.applyLookAhead();
     await this.reverb.generate();
     Tone.getTransport().start();
     this.running = true;
@@ -287,6 +361,8 @@ export class AudioEngine {
     this.updateRooms(dt);
     this.playInstrument.syncContext(this.conductor.getHarmonicContext());
     this.playInstrument.update(dt);
+    this.playKit.syncContext(this.conductor.getHarmonicContext());
+    this.playKit.update(dt);
     this.updateFollow();
     this.updateDuck();
   }
@@ -353,7 +429,10 @@ export class AudioEngine {
 
   /** Play channel for the visual side — a struck chord blooms the field. */
   private playChannels() {
-    return { playPulse: this.playActive ? this.playInstrument.getPulse() : 0 };
+    if (!this.playActive) return { playPulse: 0 };
+    const pulse =
+      this.voiceMode === 'beat' ? this.playKit.getPulse() : this.playInstrument.getPulse();
+    return { playPulse: pulse };
   }
 
   setKnobs(knobs: AppKnobs): void {
@@ -376,11 +455,72 @@ export class AudioEngine {
   setMode(mode: EngineMode): void {
     this.mode = mode;
     this.conductor.clock.steadyTempo = mode !== 'drift';
+    this.applyLookAhead();
     this.setPlayActive(mode === 'play');
+  }
+
+  /** Scheduling headroom for the mode we're in — see `AMBIENT_LOOKAHEAD`. */
+  private applyLookAhead(): void {
+    Tone.getContext().lookAhead =
+      this.mode === 'play' ? PLAY_LOOKAHEAD : AMBIENT_LOOKAHEAD;
   }
 
   getPlayInstrument(): PlayInstrument {
     return this.playInstrument;
+  }
+
+  getPlayKit(): PlayKit {
+    return this.playKit;
+  }
+
+  getPlayVoiceMode(): PlayVoiceMode {
+    return this.voiceMode;
+  }
+
+  /**
+   * Swap which half of the orchestra the keybed plays.
+   *
+   * Whatever the old mode was holding is released here rather than left to
+   * hang: a chord still sounding while the keys under it have become drums
+   * has nothing left that will ever send its note-offs.
+   */
+  setPlayVoiceMode(mode: PlayVoiceMode): void {
+    if (mode === this.voiceMode) return;
+    this.voiceMode = mode;
+    this.playInstrument.allNotesOff();
+    this.playKit.allNotesOff();
+    // A chord the ensemble had taken is not an instruction you are still
+    // giving once your hands are on the drums.
+    this.conductor.harmonicField.clearPlayerLead();
+    this.lastPlayLevel = -1;
+    this.lastKitLevel = -1;
+    if (this.playActive) this.applyPlayLevel(0.25);
+  }
+
+  /** Every in-app input source funnels through here, so which half of the
+   * orchestra a key plays is decided in exactly one place. */
+  playNoteOn(midiNote: number, velocity: number): void {
+    if (this.voiceMode === 'beat') this.playKit.noteOn(midiNote, velocity);
+    else this.playInstrument.noteOn(midiNote, velocity);
+  }
+
+  playNoteOff(midiNote: number): void {
+    if (this.voiceMode === 'beat') this.playKit.noteOff(midiNote);
+    else this.playInstrument.noteOff(midiNote);
+  }
+
+  /** Keys lit on the on-screen keyboard, whichever mode is playing. */
+  getPlayHeldKeys(): number[] {
+    return this.voiceMode === 'beat'
+      ? this.playKit.getHeldKeys()
+      : this.playInstrument.getHeldKeys();
+  }
+
+  /** What is sounding — pitches in Melody, kit pieces in Beat. */
+  getPlaySounding(): string[] {
+    return this.voiceMode === 'beat'
+      ? this.playKit.getSoundingLabels()
+      : this.playInstrument.getSoundingNotes();
   }
 
   /**
@@ -395,15 +535,31 @@ export class AudioEngine {
     this.playActive = active;
     if (!active) {
       this.playInstrument.allNotesOff();
+      this.playKit.allNotesOff();
       this.conductor.harmonicField.clearPlayerLead();
       this.ensembleDuck = { ...NO_DUCK };
       this.applyBusGains(1.5);
     }
     this.lastPlayLevel = -1;
+    this.lastKitLevel = -1;
     this.playBus.gain.rampTo(
       active ? instrumentLevel(this.blend, this.masterIntensity) : 0,
       active ? 0.15 : 0.6,
     );
+    this.playKitBus.gain.rampTo(active ? this.kitLevel() : 0, active ? 0.15 : 0.6);
+  }
+
+  /**
+   * The played kit's bus level.
+   *
+   * Voiced against the generative kit's bus rather than against the melodic
+   * instrument's: the two are in the same register through the same path,
+   * and what matters is that a hit you play lands at about the weight of a
+   * hit the Conductor plays. It rides the session arc by the same amount
+   * the instrument does, for the same reason.
+   */
+  private kitLevel(): number {
+    return instrumentLevel(this.blend, this.masterIntensity) * 1.15;
   }
 
   /** How far forward the instrument sits, and how the orchestra answers it. */
@@ -433,7 +589,7 @@ export class AudioEngine {
    * it here would mean Behind could never show a settled shape at all.
    */
   getPlayFollow(): { confidence: number; taken: boolean } {
-    if (!this.playActive) return { confidence: 0, taken: false };
+    if (!this.playActive || this.voiceMode === 'beat') return { confidence: 0, taken: false };
     const chord = this.playInstrument.getIntent().readChord();
     return {
       confidence: chord?.confidence ?? 0,
@@ -456,7 +612,11 @@ export class AudioEngine {
    * made in one place — see `PlayBlend.follow`.
    */
   private updateFollow(): void {
-    if (!this.playActive) return;
+    // Drums are not an instruction about harmony. Beat mode still ducks and
+    // still sits in the room, but it has nothing to tell the field about
+    // which chord to be in, and reading one out of a kick pattern would be
+    // inventing intent that isn't there.
+    if (!this.playActive || this.voiceMode === 'beat') return;
     const field = this.conductor.harmonicField;
     const intent = this.playInstrument.getIntent();
 
@@ -486,8 +646,9 @@ export class AudioEngine {
    * in the energy, and ramping a smooth signal again only adds lag.
    */
   private updateDuck(): void {
-    const energy = this.playActive ? this.playInstrument.getEnergy() : 0;
-    const next = energy > 0 ? duckFor(this.blend, energy) : NO_DUCK;
+    const source = this.voiceMode === 'beat' ? this.playKit : this.playInstrument;
+    const energy = this.playActive ? source.getEnergy() : 0;
+    const next = energy > 0 ? duckFor(this.blend, energy, this.voiceMode) : NO_DUCK;
     const moved = (Object.keys(next) as (keyof LayerPresence)[]).some(
       (k) => Math.abs(next[k] - this.ensembleDuck[k]) > DUCK_EPSILON,
     );
@@ -513,9 +674,15 @@ export class AudioEngine {
    */
   private applyPlayLevel(rampSec = 1.2): void {
     const level = instrumentLevel(this.blend, this.masterIntensity);
-    if (Math.abs(level - this.lastPlayLevel) < 0.004) return;
-    this.lastPlayLevel = level;
-    this.playBus.gain.rampTo(level, rampSec);
+    if (Math.abs(level - this.lastPlayLevel) >= 0.004) {
+      this.lastPlayLevel = level;
+      this.playBus.gain.rampTo(level, rampSec);
+    }
+    const kit = this.kitLevel();
+    if (Math.abs(kit - this.lastKitLevel) >= 0.004) {
+      this.lastKitLevel = kit;
+      this.playKitBus.gain.rampTo(kit, rampSec);
+    }
   }
 
   /**
@@ -569,11 +736,25 @@ export class AudioEngine {
     for (const voice of this.voices) voice.setStereoWidth(v, rampSec);
   }
 
+  /**
+   * Where a master-bus gesture is allowed to take the mix.
+   *
+   * `depth` is what the gesture wants, as a fraction of the base level. The
+   * floor is what the session arc has already spent: if the arc is sitting
+   * at 0.4, a gesture asking for 0.38 would land the pair at 0.15, so it is
+   * held to 0.65 instead and the pair lands at MIN_MIX. When the arc is up
+   * where it usually is, the floor is below the gesture and nothing changes.
+   */
+  private gestureGain(depth: number): number {
+    const floor = MIN_MIX / Math.max(0.2, this.masterIntensity);
+    return this.baseMasterGain * Math.min(1, Math.max(depth, floor));
+  }
+
   triggerPreEnsembleInhale(): void {
     const now = Tone.now();
     this.masterBus.gain.cancelScheduledValues(now);
     this.masterBus.gain.setValueAtTime(this.masterBus.gain.value, now);
-    this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain * 0.55, now + 0.75);
+    this.masterBus.gain.linearRampToValueAtTime(this.gestureGain(0.55), now + 0.75);
     this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain, now + 1.1);
     this.highpass.frequency.linearRampToValueAtTime(140, now + 0.5);
     this.highpass.frequency.linearRampToValueAtTime(90, now + 1.2);
@@ -608,7 +789,7 @@ export class AudioEngine {
     const now = Tone.now();
     this.masterBus.gain.cancelScheduledValues(now);
     this.masterBus.gain.setValueAtTime(this.masterBus.gain.value, now);
-    this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain * 0.72, now + 0.35);
+    this.masterBus.gain.linearRampToValueAtTime(this.gestureGain(0.72), now + 0.35);
     this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain, now + durationSec);
   }
 
@@ -616,8 +797,8 @@ export class AudioEngine {
     const now = Tone.now();
     this.masterBus.gain.cancelScheduledValues(now);
     this.masterBus.gain.setValueAtTime(this.masterBus.gain.value, now);
-    this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain * 0.38, now + 1.2);
-    this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain * 0.85, now + 2.8);
+    this.masterBus.gain.linearRampToValueAtTime(this.gestureGain(0.38), now + 1.2);
+    this.masterBus.gain.linearRampToValueAtTime(this.gestureGain(0.85), now + 2.8);
     this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain, now + 4.2);
   }
 
@@ -712,23 +893,37 @@ export class AudioEngine {
     return this.analyser;
   }
 
+  /**
+   * The spectrum, 0–1 per bin.
+   *
+   * Into a buffer this keeps rather than a fresh one per call, because this
+   * is called once a frame: a new 512-float array sixty times a second is
+   * 120KB/s of garbage whose only purpose is to be read once and dropped.
+   * The collection that eventually follows is a main-thread pause, and a
+   * main-thread pause is exactly what makes Tone hand the audio clock events
+   * that are already in the past. Nothing holds onto the returned array
+   * across frames — the visualizer reads it and reduces it to bands in the
+   * same breath — so there is nothing for the reuse to break.
+   */
   getSpectrum(): Float32Array {
-    const raw = this.analyser.getValue();
-    let data: Float32Array;
-
-    if (raw instanceof Float32Array) {
-      data = raw;
-    } else if (Array.isArray(raw)) {
-      data = raw[0] ?? new Float32Array(256);
-    } else {
-      data = new Float32Array(256);
+    const data = this.analyserData();
+    let out = this.spectrumOut;
+    if (out.length !== data.length) {
+      out = new Float32Array(data.length);
+      this.spectrumOut = out;
     }
-
-    const out = new Float32Array(data.length);
     for (let i = 0; i < data.length; i++) {
       out[i] = Math.max(0, Math.min(1, (data[i]! + 100) / 100));
     }
     return out;
+  }
+
+  /** The analyser's own buffer, whatever shape Tone hands it back in. */
+  private analyserData(): Float32Array {
+    const raw = this.analyser.getValue();
+    if (raw instanceof Float32Array) return raw;
+    if (Array.isArray(raw)) return raw[0] ?? this.emptySpectrum;
+    return this.emptySpectrum;
   }
 
   getAudioFeatures(): AudioFeatures {
@@ -737,16 +932,7 @@ export class AudioEngine {
       return this.cachedFeatures;
     }
 
-    const raw = this.analyser.getValue();
-    let data: Float32Array;
-
-    if (raw instanceof Float32Array) {
-      data = raw;
-    } else if (Array.isArray(raw)) {
-      data = raw[0] ?? new Float32Array(256);
-    } else {
-      data = new Float32Array(256);
-    }
+    const data = this.analyserData();
 
     let bass = 0;
     let mids = 0;
@@ -839,6 +1025,7 @@ export class AudioEngine {
     if (this.spaceThrowTimeout) clearTimeout(this.spaceThrowTimeout);
     this.neighbour?.dispose();
     this.playInstrument.dispose();
+    this.playKit.dispose();
     Tone.getTransport().stop();
     this.running = false;
   }

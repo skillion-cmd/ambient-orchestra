@@ -93,7 +93,7 @@ export class ConductorSkill {
     const period = Math.max(45, Math.min(420, ctx.movementDurationSec / 3));
     const swell = 0.5 + 0.5 * Math.sin((this.elapsed / period) * Math.PI * 2 - Math.PI / 2);
     const depth = SWELL_DEPTH[scale];
-    const dipped = this.updateDip(scale, dt);
+    const dipped = this.updateDip(scale, dt, ctx.movementPhase);
     const intensityTarget =
       PHASE_INTENSITY[ctx.movementPhase] * (1 - depth * (1 - swell)) * dipped;
     this.intensity += (intensityTarget - this.intensity) * (1 - Math.exp(-dt / 6));
@@ -115,17 +115,27 @@ export class ConductorSkill {
    * the room empties out. Long-form only: in a two-minute piece it would
    * read as a dropout rather than a held breath.
    */
-  private updateDip(scale: MovementScale, dt: number): number {
+  private updateDip(scale: MovementScale, dt: number, phase: MovementPhase): number {
     if (!DIP_SCALES.includes(scale)) {
       this.dip = Math.max(0, this.dip - dt / 20);
       return 1 - this.dip * 0.6;
     }
 
     this.nextDipIn -= dt;
-    if (this.nextDipIn <= 0 && this.dip <= 0 && this.dipHold <= 0) {
+    // Never start one on the way out. The dip is the room emptying in the
+    // middle of a piece, with the piece still going on around it; laid over
+    // a dissolve and an exhale — which are already taking the level down,
+    // and where the vacuum gesture is about to take it down again — it stops
+    // being a held breath and becomes the gap between two tracks.
+    const closing = phase === 'dissolve' || phase === 'exhale';
+    if (!closing && this.nextDipIn <= 0 && this.dip <= 0 && this.dipHold <= 0) {
       this.dipHold = 10 + Math.random() * 14;
       this.nextDipIn = 240 + Math.random() * 360;
     }
+
+    // A dip already running when the piece starts closing lets go early
+    // rather than riding the ending down with everything else.
+    if (closing && this.dipHold > 0) this.dipHold = 0;
 
     if (this.dipHold > 0) {
       this.dipHold -= dt;

@@ -251,6 +251,26 @@ export abstract class VoiceBase {
     this.targetLevel = 0;
   }
 
+  /**
+   * Turn a fade-out back into a fade-in, without rebuilding anything.
+   *
+   * A voice on its way out still owns live nodes — `onExit` only runs when
+   * the fade reaches zero — so calling `enter()` on one would build a
+   * second set of synths over the first and leave the original's loop
+   * running with nothing holding a reference to it. And the alternative,
+   * which is what the Conductor did before this existed, is to treat the
+   * voice as already active and skip: the caller asks for the voice, gets
+   * no error, and the voice finishes dying anyway.
+   *
+   * Returns false when there was nothing to revive.
+   */
+  revive(): boolean {
+    if (this.state !== 'fadingOut') return false;
+    this.state = 'fadingIn';
+    this.targetLevel = this.maxGain;
+    return true;
+  }
+
   getLevel(): number {
     return this.level;
   }

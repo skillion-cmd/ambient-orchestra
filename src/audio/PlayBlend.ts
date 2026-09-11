@@ -23,6 +23,22 @@ import type { LayerPresence } from './LayerPresence';
  */
 export type PlayBlendId = 'behind' | 'with' | 'front';
 
+/**
+ * What the keybed is playing.
+ *
+ * Melody — the eight polyphonic voices, the orchestra's own timbres under
+ * your fingers. Beat — the kit, one piece per key, played against whatever
+ * the Conductor has going. The same keys, the same blend control, the same
+ * room; a different half of the orchestra.
+ */
+export type PlayVoiceMode = 'melody' | 'beat';
+
+export const DEFAULT_VOICE_MODE: PlayVoiceMode = 'melody';
+
+export function isVoiceMode(value: unknown): value is PlayVoiceMode {
+  return value === 'melody' || value === 'beat';
+}
+
 export interface PlayBlend {
   id: PlayBlendId;
   /** Panel label — the row is three buttons wide. */
@@ -42,6 +58,17 @@ export interface PlayBlend {
   arcFollow: number;
   /** Where each layer sits when you are playing your hardest. */
   floor: LayerPresence;
+  /**
+   * The same, for Beat mode.
+   *
+   * A different register means a different set of layers to make room in.
+   * Playing keys, the melody and the air share your range and the beat is
+   * nowhere near you; playing drums it is the exact opposite — the
+   * Conductor's kit is now standing where your hands are, and the melody
+   * has no reason to move at all. Two kits at full level in the same bar do
+   * not read as a busier arrangement, they read as a mistake.
+   */
+  beatFloor: LayerPresence;
   /**
    * How many bars the ensemble takes to come round to a chord you are holding.
    *
@@ -68,6 +95,7 @@ export const PLAY_BLENDS: PlayBlend[] = [
     arcFollow: 0.62,
     followBars: 4,
     floor: { melody: 0.72, air: 0.7, pad: 0.92, sub: 1, pulse: 0.96 },
+    beatFloor: { melody: 1, air: 0.96, pad: 1, sub: 0.92, pulse: 0.66 },
   },
   {
     id: 'with',
@@ -77,6 +105,7 @@ export const PLAY_BLENDS: PlayBlend[] = [
     arcFollow: 0.45,
     followBars: 2,
     floor: { melody: 0.44, air: 0.42, pad: 0.74, sub: 0.94, pulse: 0.88 },
+    beatFloor: { melody: 0.94, air: 0.88, pad: 0.96, sub: 0.78, pulse: 0.34 },
   },
   {
     id: 'front',
@@ -86,6 +115,7 @@ export const PLAY_BLENDS: PlayBlend[] = [
     arcFollow: 0.22,
     followBars: 1,
     floor: { melody: 0.22, air: 0.2, pad: 0.5, sub: 0.82, pulse: 0.7 },
+    beatFloor: { melody: 0.86, air: 0.8, pad: 0.9, sub: 0.6, pulse: 0.12 },
   },
 ];
 
@@ -139,11 +169,16 @@ export function velocityCurve(velocity: number): number {
  * Each layer travels from 1 to its floor in proportion, so the orchestra
  * leans away from you by as much as you are leaning in.
  */
-export function duckFor(blend: PlayBlend, energy: number): LayerPresence {
+export function duckFor(
+  blend: PlayBlend,
+  energy: number,
+  voiceMode: PlayVoiceMode = 'melody',
+): LayerPresence {
   const e = Math.max(0, Math.min(1, energy));
-  const layers = Object.keys(blend.floor) as (keyof LayerPresence)[];
+  const floor = voiceMode === 'beat' ? blend.beatFloor : blend.floor;
+  const layers = Object.keys(floor) as (keyof LayerPresence)[];
   const out = {} as LayerPresence;
-  for (const layer of layers) out[layer] = 1 - (1 - blend.floor[layer]) * e;
+  for (const layer of layers) out[layer] = 1 - (1 - floor[layer]) * e;
   return out;
 }
 

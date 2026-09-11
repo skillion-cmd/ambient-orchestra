@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   focusPointAt,
+  LAYER_FLOORS,
   presenceAt,
   PRESENCE_LAYERS,
   PRESENCE_MAX,
@@ -34,15 +35,33 @@ describe('presenceAt', () => {
     }
   });
 
-  it('every layer both leads the mix and recedes near the floor', () => {
+  it('every layer both leads the mix and recedes to its own floor', () => {
     const frames = sweep(20000, 2);
     for (const layer of PRESENCE_LAYERS) {
       const values = frames.map((f) => f[layer]);
       // leads: reaches the front at some point in the rotation
       expect(Math.max(...values)).toBeCloseTo(PRESENCE_MAX, 4);
-      // recedes: falls away to near-absent at some other point, not
-      // merely quiet — that depth is the whole point of the rotation
-      expect(Math.min(...values)).toBeLessThan(0.2);
+      // recedes: falls away to the floor set for that layer. For the
+      // ambient layers that is near-absent, which is the whole point of
+      // the rotation; for the beat and the sub it is the point at which
+      // receding would stop being a balance move and start being the
+      // groove dropping out.
+      expect(Math.min(...values)).toBeLessThan(LAYER_FLOORS[layer] + 0.12);
+    }
+  });
+
+  it('keeps the beat and the sub audible when they are behind', () => {
+    for (const p of sweep(20000, 2)) {
+      // -8dB and -11dB: pulled back, still keeping time.
+      expect(p.pulse).toBeGreaterThanOrEqual(LAYER_FLOORS.pulse - 1e-9);
+      expect(p.sub).toBeGreaterThanOrEqual(LAYER_FLOORS.sub - 1e-9);
+    }
+  });
+
+  it('still lets the ambient layers vanish', () => {
+    const frames = sweep(20000, 2);
+    for (const layer of ['pad', 'melody', 'air'] as const) {
+      expect(Math.min(...frames.map((f) => f[layer]))).toBeLessThan(0.2);
     }
   });
 
@@ -62,6 +81,18 @@ describe('presenceAt with a silent layer', () => {
       const audible = PRESENCE_LAYERS.filter((l) => l !== 'pulse').map((l) => p[l]);
       expect(Math.max(...audible)).toBeCloseTo(PRESENCE_MAX, 6);
     }
+  });
+
+  it('drops a silent layer to the common floor, not the beat floor', () => {
+    // The rhythmic floor exists to keep a beat that is playing audible.
+    // On a movement with no beat it would only lift the bus noise floor.
+    let sawCommonFloor = false;
+    for (let t = 0; t < 20000; t += 2) {
+      const p = presenceAt(focusPointAt(t), 0.8, { pulse: true });
+      if (p.pulse < LAYER_FLOORS.pulse) sawCommonFloor = true;
+      expect(p.pulse).toBeGreaterThanOrEqual(PRESENCE_MIN - 1e-9);
+    }
+    expect(sawCommonFloor).toBe(true);
   });
 
   it('never lets a silent layer exceed the front of the mix', () => {

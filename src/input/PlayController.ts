@@ -1,5 +1,6 @@
 import type { AudioEngine } from '../audio/AudioEngine';
 import type { PlayInstrument } from '../audio/PlayInstrument';
+import type { PlayVoiceMode } from '../audio/PlayBlend';
 import type { PlayTuning } from '../audio/PlayMapping';
 import { findPreset, PLAY_PRESETS } from '../audio/PlayPresets';
 import type { SoundKnobs } from '../audio/types';
@@ -83,8 +84,8 @@ export class PlayController {
       },
     });
     this.keyboard = new KeyboardInput({
-      noteOn: (note, velocity) => this.instrument.noteOn(note, velocity),
-      noteOff: (note) => this.instrument.noteOff(note),
+      noteOn: (note, velocity) => this.engine.playNoteOn(note, velocity),
+      noteOff: (note) => this.engine.playNoteOff(note),
       octaveShift: (delta) => this.nudgeOctave(delta),
     });
   }
@@ -116,11 +117,16 @@ export class PlayController {
 
   /** On-screen keyboard and any other in-app source. */
   noteOn(midiNote: number, velocity: number): void {
-    this.instrument.noteOn(midiNote, velocity);
+    this.engine.playNoteOn(midiNote, velocity);
   }
 
   noteOff(midiNote: number): void {
-    this.instrument.noteOff(midiNote);
+    this.engine.playNoteOff(midiNote);
+  }
+
+  /** Melody or Beat — which half of the orchestra the keys play. */
+  setVoiceMode(mode: PlayVoiceMode): void {
+    this.engine.setPlayVoiceMode(mode);
   }
 
   setTuning(tuning: PlayTuning): void {
@@ -158,13 +164,13 @@ export class PlayController {
       this.firePad(padSlotForNote(this.profile, this.learned, note, channel));
       return;
     }
-    this.instrument.noteOn(note, velocity);
+    this.engine.playNoteOn(note, velocity);
   }
 
   private handleNoteOff(note: number, channel: number): void {
     if (!this.active) return;
     if (isPadNote(this.profile, note, channel)) return;
-    this.instrument.noteOff(note);
+    this.engine.playNoteOff(note);
   }
 
   private handleControlChange(cc: number, value: number, raw: number): void {
@@ -247,6 +253,7 @@ export class PlayController {
         break;
       case 'panic':
         this.instrument.allNotesOff();
+        this.engine.getPlayKit().allNotesOff();
         break;
     }
   }
