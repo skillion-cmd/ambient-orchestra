@@ -1069,11 +1069,30 @@ function stepsToPattern(steps: number[], length = 16): boolean[] {
  * feel handmade instead of merely loose: random jitter per hit just sounds
  * sloppy, whereas a stable offset becomes part of the pattern.
  */
-function fixedNudges(length = 16): number[] {
+function fixedNudges(length = 16, span = NUDGE_SPAN_SEC): number[] {
   const out: number[] = [];
-  for (let i = 0; i < length; i++) out.push((Math.random() - 0.45) * NUDGE_SPAN_SEC);
+  for (let i = 0; i < length; i++) out.push((Math.random() - 0.45) * span);
   return out;
 }
+
+/**
+ * The two grooves a night piece moves between.
+ *
+ * `twoStep` is the Burial reading the night pieces were built on: the kick
+ * skips the third beat and the whole bar lurches. `fourFloor` is what the
+ * same tempo does in the other room — kick on every beat, hats on the
+ * offbeats, clap on 2 and 4, and almost nothing out of place.
+ *
+ * Having both is what gives a night piece an arc. A 2-step that never
+ * resolves into anything is a texture; a 2-step that locks into four on the
+ * floor for sixteen bars and then breaks out of it again is an arrangement,
+ * and the lurch reads as deliberate because you have heard the grid it is
+ * departing from.
+ */
+type NightStyle = 'twoStep' | 'fourFloor';
+
+/** Bars in a section — how long one groove holds before it may change. */
+const SECTION_BARS = 16;
 
 /**
  * A soft kit that can actually carry a section — filtered kick, shaker and
@@ -1103,14 +1122,24 @@ export class PulseKit extends VoiceBase {
   private readonly clickTime = new ScheduleTime();
   private readonly snareTime = new ScheduleTime();
 
+  /** The open hat — a night four-floor section's offbeat. */
+  private openHat: Tone.NoiseSynth | null = null;
+  private openHatFilter: Tone.Filter | null = null;
+  private readonly openHatTime = new ScheduleTime();
+
   private kickPattern: boolean[] = [];
   private shakerPattern: boolean[] = [];
   private clickPattern: boolean[] = [];
+  private openHatPattern: boolean[] = [];
   private step = 0;
   private bars = 0;
   private swing = 0.4;
   /** Fixed per-step offsets on a night pattern; null means grid + jitter. */
   private nudges: number[] | null = null;
+  /** Which groove the current night section is playing. */
+  private nightStyle: NightStyle = 'twoStep';
+  /** True for the last bar of every eight — the turnaround. */
+  private fillBar = false;
 
   constructor(dest: Bus) {
     super('pulseKit', dest, 0.5);
@@ -1149,6 +1178,15 @@ export class PulseKit extends VoiceBase {
       envelope: { attack: 0.001, decay: 0.13, sustain: 0 },
     }).connect(this.snareFilter);
 
+    // Its own voice rather than a longer shaker: an open hat is the one hit
+    // in a house bar that is allowed to ring into the next one, and sharing
+    // the shaker's envelope would mean either no open hat or no shaker.
+    this.openHatFilter = new Tone.Filter(6200, 'highpass', -24).connect(this.output);
+    this.openHat = new Tone.NoiseSynth({
+      noise: { type: 'white' },
+      envelope: { attack: 0.001, decay: 0.17, sustain: 0 },
+    }).connect(this.openHatFilter);
+
     this.step = 0;
     this.bars = 0;
     this.rollPatterns();
@@ -1158,9 +1196,10 @@ export class PulseKit extends VoiceBase {
   /** Fresh euclidean spreads, re-rolled every eight bars so it evolves. */
   private rollPatterns(): void {
     if (this.harmonicContext?.character === 'night') {
-      this.rollTwoStep();
+      this.rollNight();
       return;
     }
+    this.openHatPattern = [];
     const kickPulses = 3 + Math.floor(Math.random() * 3); // 3–5
     const shakerPulses = 7 + Math.floor(Math.random() * 5); // 7–11
     const clickPulses = 2 + Math.floor(Math.random() * 2); // 2–3
@@ -1172,6 +1211,55 @@ export class PulseKit extends VoiceBase {
   }
 
   /**
+   * The night groove for the next eight bars.
+   *
+   * A section is sixteen bars, so the groove only *changes* on every second
+   * roll — a pattern that could turn into a different genre every eight bars
+   * is a shuffle, not an arrangement. Within a section the details still
+   * move: the hats and the ghosts re-roll on the eight, which is variation
+   * inside a part rather than a new part.
+   *
+   * Which groove a section takes follows the movement's phase. The crest of
+   * a night piece is where four on the floor belongs — that is the drop —
+   * while the opening and the long tail keep the 2-step's lurch.
+   */
+  private rollNight(): void {
+    const startingSection = this.bars % SECTION_BARS === 0;
+    if (startingSection) {
+      const phase = this.harmonicContext?.movementPhase;
+      const fourFloorChance =
+        phase === 'bloom' ? 0.72 : phase === 'hang' ? 0.5 : phase === 'gather' ? 0.28 : 0.1;
+      this.nightStyle = Math.random() < fourFloorChance ? 'fourFloor' : 'twoStep';
+    }
+    if (this.nightStyle === 'fourFloor') this.rollFourFloor();
+    else this.rollTwoStep();
+  }
+
+  /**
+   * Four on the floor at garage tempo — the same night, the other room.
+   *
+   * Deliberately the straightest thing in the engine: the kick on every
+   * beat, the open hat on every offbeat, the clap on 2 and 4, and the
+   * timing nearly on the grid. It earns its place by contrast — the 2-step
+   * around it only reads as *off* if you have recently heard what on
+   * sounds like.
+   */
+  private rollFourFloor(): void {
+    this.kickPattern = stepsToPattern([0, 4, 8, 12]);
+    // Sixteenth shakers under the four, thinned so they sit as texture.
+    this.shakerPattern = stepsToPattern(
+      Math.random() < 0.5 ? [1, 3, 5, 7, 9, 11, 13, 15] : [3, 7, 11, 15, 6, 14],
+    );
+    this.openHatPattern = stepsToPattern([2, 6, 10, 14]);
+    // Clap on the backbeat, and on some sections a pickup into the next bar.
+    this.clickPattern = stepsToPattern(Math.random() < 0.4 ? [4, 12, 15] : [4, 12]);
+    // Nearly straight, and nudged by a third of what the 2-step takes: a
+    // house bar that swung and wandered would just be a worse 2-step.
+    this.swing = 0.08 + Math.random() * 0.1;
+    this.nudges = fixedNudges(16, NUDGE_SPAN_SEC * 0.3);
+  }
+
+  /**
    * 2-step. The genre's defining move is what the kick *doesn't* do: it
    * lands on the one and then skips the third beat entirely, dropping
    * somewhere in its second half instead, so the bar lurches rather than
@@ -1179,6 +1267,7 @@ export class PulseKit extends VoiceBase {
    * and the hats fill the gaps unevenly.
    */
   private rollTwoStep(): void {
+    this.openHatPattern = [];
     const KICKS = [
       [0, 6, 10],
       [0, 7],
@@ -1213,6 +1302,10 @@ export class PulseKit extends VoiceBase {
     const step = this.step % 16;
     if (step === 0) {
       this.bars++;
+      // The bar before a re-roll is the turnaround. Marking structure is
+      // most of what a fill is for: eight bars of anything reads as a loop
+      // until something says where the eight ended.
+      this.fillBar = this.bars % 8 === 7;
       if (this.bars % 8 === 0) this.rollPatterns();
     }
     this.step++;
@@ -1265,9 +1358,20 @@ export class PulseKit extends VoiceBase {
       // actually hear land.
       const pitch = Tone.Frequency(rootMidi - 12, 'midi').toFrequency();
       // A 2-step kick is a thud placed just so, not a punch: softer and
-      // more even than the open kit's, because the pattern carries it.
-      const vel = night ? 0.6 + Math.random() * 0.08 : 0.72 + Math.random() * 0.16;
+      // more even than the open kit's, because the pattern carries it. A
+      // four-floor kick is the opposite job — it is the thing holding the
+      // section down — so it comes up to meet the open kit's weight.
+      const fourFloor = night && this.nightStyle === 'fourFloor';
+      const vel = fourFloor
+        ? 0.74 + Math.random() * 0.08
+        : night
+          ? 0.6 + Math.random() * 0.08
+          : 0.72 + Math.random() * 0.16;
       this.kick?.triggerAttack(pitch, this.kickTime.atLeast(at), vel);
+    }
+
+    if (euclideanHit(this.openHatPattern, step, 0.95)) {
+      this.openHat?.triggerAttack(this.openHatTime.atLeast(at), 0.13 + Math.random() * 0.05);
     }
 
     if (euclideanHit(this.shakerPattern, step, night ? 0.92 : 0.8)) {
@@ -1294,6 +1398,37 @@ export class PulseKit extends VoiceBase {
         );
       }
     }
+
+    this.maybeFill(step, at, night);
+  }
+
+  /**
+   * The turnaround: extra hits through the last beat of every eighth bar.
+   *
+   * Small on purpose — a roll into the next eight, not a drum solo. What it
+   * buys is the listener knowing where they are: the same eight bars with a
+   * fill at the end of them read as a section, and the section after it
+   * reads as having started, which is the difference between a piece with
+   * an arrangement and a loop that happens to change sometimes.
+   */
+  private maybeFill(step: number, at: number, night: boolean): void {
+    if (!this.fillBar || step < 12) return;
+    // The open kit fills sometimes; a night piece always does, because the
+    // turnaround is most of what says which groove the next section is in.
+    if (!night && this.bars % 16 !== 7) return;
+
+    const into = (step - 12) / 3; // 0 at the start of the beat, 1 at the end
+    if (night) {
+      this.snare?.triggerAttack(
+        this.snareTime.atLeast(at + 0.001),
+        0.12 + into * 0.22 + Math.random() * 0.05,
+      );
+      if (step === 15) {
+        this.openHat?.triggerAttack(this.openHatTime.atLeast(at), 0.14);
+      }
+      return;
+    }
+    this.shaker?.triggerAttack(this.shakerTime.atLeast(at + 0.001), 0.1 + into * 0.16);
   }
 
   onUpdate(): void {}
@@ -1310,6 +1445,8 @@ export class PulseKit extends VoiceBase {
         this.clickFilter,
         this.snare,
         this.snareFilter,
+        this.openHat,
+        this.openHatFilter,
       ],
       0.5,
     );
@@ -1320,6 +1457,8 @@ export class PulseKit extends VoiceBase {
     this.clickFilter = null;
     this.snare = null;
     this.snareFilter = null;
+    this.openHat = null;
+    this.openHatFilter = null;
   }
 }
 

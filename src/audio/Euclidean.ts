@@ -51,6 +51,10 @@ export function euclideanHit(
   step: number,
   probability = 0.85,
 ): boolean {
+  // An empty pattern is a part that isn't playing on this groove, not an
+  // error — `step % 0` is NaN, which would index nothing and read as false
+  // by accident rather than on purpose.
+  if (pattern.length === 0) return false;
   if (!pattern[step % pattern.length]) return false;
   return Math.random() < probability;
 }

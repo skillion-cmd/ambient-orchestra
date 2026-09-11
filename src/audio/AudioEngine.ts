@@ -32,6 +32,48 @@ type EngineMode = 'drift' | 'calibrate' | 'play';
  */
 const DUCK_EPSILON = 0.006;
 
+/**
+ * The deepest the mix may go once everything that dips it has multiplied.
+ *
+ * Four separate things pull the level down and none of them knows about the
+ * others: the session arc (down to 0.2), the long-form near-silence dip
+ * (another 0.4 on top of that), a gesture like the exhale vacuum (0.38),
+ * and the per-voice phase boost (0.55 in exhale). Each is a good idea on its
+ * own. Stacked — and they stack precisely at the end of a piece, where all
+ * four are at their deepest at once — they reach about -20dB, which is not a
+ * piece breathing out, it is a piece stopping for a few seconds and then
+ * starting again. That is the "transition silence".
+ *
+ * So the gestures floor themselves against wherever the arc already is:
+ * -11.7dB is as far down as the arc and a gesture may go together. The
+ * gesture still happens — it is just measured from where the mix actually
+ * is rather than from the top.
+ */
+const MIN_MIX = 0.26;
+
+/**
+ * How far ahead of the audio clock events are scheduled.
+ *
+ * Tone schedules from the main thread: a timer wakes up, looks this far into
+ * the future, and hands the audio clock everything due in that window. Which
+ * means the window is the entire budget for a frame. Anything that blocks the
+ * main thread for longer than it — a garbage collection, a WebGL stall, the
+ * dozen nodes a voice builds when it enters — lands its events in the past,
+ * and an event in the past is not played late, it is dropped. That is the
+ * skip: not a synth misbehaving, a scheduler that was not given room.
+ *
+ * Tone's default 0.1s is a latency-first compromise, which is the wrong end
+ * of the trade for music that composes itself over fifteen minutes. Drift and
+ * Calibrate take a quarter of a second of headroom and nobody can tell.
+ *
+ * Play cannot: there the number is how long after your finger the note
+ * speaks, and 0.1 is already at the edge of what reads as an instrument
+ * rather than a lag. So Play goes the other way, tighter than the default,
+ * and accepts that a stall it can't absorb may cost a note.
+ */
+const AMBIENT_LOOKAHEAD = 0.25;
+const PLAY_LOOKAHEAD = 0.04;
+
 export class AudioEngine {
   private readonly padBus: Tone.Gain;
   private readonly melodyBus: Tone.Gain;
@@ -97,6 +139,10 @@ export class AudioEngine {
   private pokeAnchorActivity = DEFAULT_KNOBS.sound.activity;
   private featureFrame = 0;
   private cachedFeatures: AudioFeatures = { bass: 0, mids: 0, highs: 0, overall: 0 };
+  /** Reused spectrum scratch — see `getSpectrum`. */
+  private spectrumOut = new Float32Array(512);
+  /** Handed back when the analyser has nothing to give; never written to. */
+  private readonly emptySpectrum = new Float32Array(256);
   private readonly baseMasterGain = 0.8;
   private readonly baseDelayFeedback = 0.22;
   private readonly baseReverbWet = 0.42;
@@ -273,6 +319,7 @@ export class AudioEngine {
   async start(): Promise<void> {
     if (this.running) return;
     await Tone.start();
+    this.applyLookAhead();
     await this.reverb.generate();
     Tone.getTransport().start();
     this.running = true;
@@ -376,7 +423,14 @@ export class AudioEngine {
   setMode(mode: EngineMode): void {
     this.mode = mode;
     this.conductor.clock.steadyTempo = mode !== 'drift';
+    this.applyLookAhead();
     this.setPlayActive(mode === 'play');
+  }
+
+  /** Scheduling headroom for the mode we're in — see `AMBIENT_LOOKAHEAD`. */
+  private applyLookAhead(): void {
+    Tone.getContext().lookAhead =
+      this.mode === 'play' ? PLAY_LOOKAHEAD : AMBIENT_LOOKAHEAD;
   }
 
   getPlayInstrument(): PlayInstrument {
@@ -569,11 +623,25 @@ export class AudioEngine {
     for (const voice of this.voices) voice.setStereoWidth(v, rampSec);
   }
 
+  /**
+   * Where a master-bus gesture is allowed to take the mix.
+   *
+   * `depth` is what the gesture wants, as a fraction of the base level. The
+   * floor is what the session arc has already spent: if the arc is sitting
+   * at 0.4, a gesture asking for 0.38 would land the pair at 0.15, so it is
+   * held to 0.65 instead and the pair lands at MIN_MIX. When the arc is up
+   * where it usually is, the floor is below the gesture and nothing changes.
+   */
+  private gestureGain(depth: number): number {
+    const floor = MIN_MIX / Math.max(0.2, this.masterIntensity);
+    return this.baseMasterGain * Math.min(1, Math.max(depth, floor));
+  }
+
   triggerPreEnsembleInhale(): void {
     const now = Tone.now();
     this.masterBus.gain.cancelScheduledValues(now);
     this.masterBus.gain.setValueAtTime(this.masterBus.gain.value, now);
-    this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain * 0.55, now + 0.75);
+    this.masterBus.gain.linearRampToValueAtTime(this.gestureGain(0.55), now + 0.75);
     this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain, now + 1.1);
     this.highpass.frequency.linearRampToValueAtTime(140, now + 0.5);
     this.highpass.frequency.linearRampToValueAtTime(90, now + 1.2);
@@ -608,7 +676,7 @@ export class AudioEngine {
     const now = Tone.now();
     this.masterBus.gain.cancelScheduledValues(now);
     this.masterBus.gain.setValueAtTime(this.masterBus.gain.value, now);
-    this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain * 0.72, now + 0.35);
+    this.masterBus.gain.linearRampToValueAtTime(this.gestureGain(0.72), now + 0.35);
     this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain, now + durationSec);
   }
 
@@ -616,8 +684,8 @@ export class AudioEngine {
     const now = Tone.now();
     this.masterBus.gain.cancelScheduledValues(now);
     this.masterBus.gain.setValueAtTime(this.masterBus.gain.value, now);
-    this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain * 0.38, now + 1.2);
-    this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain * 0.85, now + 2.8);
+    this.masterBus.gain.linearRampToValueAtTime(this.gestureGain(0.38), now + 1.2);
+    this.masterBus.gain.linearRampToValueAtTime(this.gestureGain(0.85), now + 2.8);
     this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain, now + 4.2);
   }
 
@@ -712,23 +780,37 @@ export class AudioEngine {
     return this.analyser;
   }
 
+  /**
+   * The spectrum, 0–1 per bin.
+   *
+   * Into a buffer this keeps rather than a fresh one per call, because this
+   * is called once a frame: a new 512-float array sixty times a second is
+   * 120KB/s of garbage whose only purpose is to be read once and dropped.
+   * The collection that eventually follows is a main-thread pause, and a
+   * main-thread pause is exactly what makes Tone hand the audio clock events
+   * that are already in the past. Nothing holds onto the returned array
+   * across frames — the visualizer reads it and reduces it to bands in the
+   * same breath — so there is nothing for the reuse to break.
+   */
   getSpectrum(): Float32Array {
-    const raw = this.analyser.getValue();
-    let data: Float32Array;
-
-    if (raw instanceof Float32Array) {
-      data = raw;
-    } else if (Array.isArray(raw)) {
-      data = raw[0] ?? new Float32Array(256);
-    } else {
-      data = new Float32Array(256);
+    const data = this.analyserData();
+    let out = this.spectrumOut;
+    if (out.length !== data.length) {
+      out = new Float32Array(data.length);
+      this.spectrumOut = out;
     }
-
-    const out = new Float32Array(data.length);
     for (let i = 0; i < data.length; i++) {
       out[i] = Math.max(0, Math.min(1, (data[i]! + 100) / 100));
     }
     return out;
+  }
+
+  /** The analyser's own buffer, whatever shape Tone hands it back in. */
+  private analyserData(): Float32Array {
+    const raw = this.analyser.getValue();
+    if (raw instanceof Float32Array) return raw;
+    if (Array.isArray(raw)) return raw[0] ?? this.emptySpectrum;
+    return this.emptySpectrum;
   }
 
   getAudioFeatures(): AudioFeatures {
@@ -737,16 +819,7 @@ export class AudioEngine {
       return this.cachedFeatures;
     }
 
-    const raw = this.analyser.getValue();
-    let data: Float32Array;
-
-    if (raw instanceof Float32Array) {
-      data = raw;
-    } else if (Array.isArray(raw)) {
-      data = raw[0] ?? new Float32Array(256);
-    } else {
-      data = new Float32Array(256);
-    }
+    const data = this.analyserData();
 
     let bass = 0;
     let mids = 0;

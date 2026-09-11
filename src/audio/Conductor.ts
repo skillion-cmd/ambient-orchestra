@@ -194,8 +194,17 @@ export class Conductor {
     // read as a synth part instead of as the medium.
     if (ctx.character !== this.lastCharacter) {
       this.lastCharacter = ctx.character;
-      if (ctx.character === 'night') this.activateVoice('vinylCrackle', ctx);
-      else this.voices.find((v) => v.id === 'vinylCrackle')?.exit();
+      if (ctx.character === 'night') {
+        this.activateVoice('vinylCrackle', ctx);
+        // And the 2-step opens with it. A night piece that spends its first
+        // minute as a pad and then reveals a groove is an ambient piece with
+        // drums added; the records this is reading from start on the drums
+        // and let everything else arrive over them. The open kit still waits
+        // for the gather, where it belongs.
+        if (ctx.pulseProfile === 'kit') this.activateVoice('pulseKit', ctx);
+      } else {
+        this.voices.find((v) => v.id === 'vinylCrackle')?.exit();
+      }
     }
 
     if (ctx.movementPhase !== this.lastPhase) {
@@ -495,7 +504,7 @@ export class Conductor {
         this.activateGroup('bed', ctx);
         this.triggerEnsemble(ctx, 0.55);
         // Reset the cycle's special textures.
-        this.fadeGroup('pulse');
+        this.fadeStalePulse(ctx);
         this.voices.find((v) => v.id === 'granularTexture')?.exit();
         // A kit movement starts its beat here, under the gather, so it has
         // arrived by the time the bloom lands rather than dropping in on it.
@@ -524,7 +533,12 @@ export class Conductor {
         this.fadeGroup('shimmer');
         this.fadeGroup('air');
         this.fadeGroup('flurry');
-        this.fadeGroup('pulse');
+        // A night piece keeps its 2-step through the morph. The groove is
+        // what that piece *is*, and losing it three quarters of the way
+        // through reads as the track giving up rather than as the mix
+        // thinning out. Every other movement drops the beat here as before.
+        if (ctx.character === 'night') this.fadeStalePulse(ctx);
+        else this.fadeGroup('pulse');
         this.voices.find((v) => v.id === 'deepPressure')?.exit();
         this.activateVoice('granularTexture', ctx);
         if (Math.random() < 0.4 + this.knobs.entropy * 0.3) {
@@ -662,6 +676,29 @@ export class Conductor {
     if (voice && !voice.isActive()) {
       voice.enter(ctx);
       this.recordActivation(id);
+    }
+  }
+
+  /**
+   * Clear the beat the *previous* movement was carrying, and leave the one
+   * this movement drew alone.
+   *
+   * `fadeGroup('pulse')` used to be safe at the gather because nothing
+   * started a kit before it. A night piece now opens on its 2-step, and
+   * fading the whole group would stop that groove and then decline to
+   * restart it — `activateVoice` skips a voice that is still fading out, so
+   * the beat would die on the gather of every night piece and never come
+   * back.
+   */
+  private fadeStalePulse(ctx: HarmonicContext): void {
+    const keep =
+      ctx.pulseProfile === 'kit'
+        ? 'pulseKit'
+        : ctx.pulseProfile === 'felt'
+          ? 'rhythmicPulse'
+          : null;
+    for (const id of VOICE_GROUPS.pulse) {
+      if (id !== keep) this.voices.find((v) => v.id === id)?.exit();
     }
   }
 
