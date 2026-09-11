@@ -19,6 +19,7 @@ import { GhostField } from './three/GhostField';
 import { TrailPass } from './three/TrailPass';
 import { CurrentsField } from './currents/CurrentsField';
 import { PLANE_Z as RESONANCE_PLANE_Z, ResonanceField } from './resonance/ResonanceField';
+import { plateAspectFor } from './resonance/plate';
 import { loadStoredVisualMode, type VisualMode } from './VisualMode';
 
 const MAX_DPR = 1.5;
@@ -58,6 +59,8 @@ export class Visualizer {
   private theme: SceneTheme;
   private width = 0;
   private height = 0;
+  /** Fraction of the viewport's bottom edge the phone dock is covering. */
+  private fieldInsetBottom = 0;
   private cameraDrift = 0;
   private breathe = 0.5;
   /** One reading of the piece, handed to whichever field is on screen. */
@@ -165,17 +168,47 @@ export class Visualizer {
   }
 
   /**
-   * Cut the plate to the window. The frustum at the plate's depth is what
-   * "fits the screen" actually means here, so it is measured rather than
-   * guessed: a fixed square left a third of a landscape window empty on
-   * either side.
+   * Size the plate to the window.
+   *
+   * The frustum at the plate's depth is what "fits the screen" actually
+   * means here, so it is measured rather than guessed — but the plate is
+   * cut to a shape that *leans* towards the window rather than matching it
+   * (see `plateAspectFor`), and then made the largest rectangle of that
+   * shape that fits. On a 16:9 window that is a plate a little wider than
+   * tall standing in the middle of the field, which is a plate; taking the
+   * window's full 16:9 gave a figure with no corners and no edges, which is
+   * wallpaper.
    */
   private syncPlateExtent(): void {
     if (!this.resonance) return;
     const distance = CAMERA_REST_Z - RESONANCE_PLANE_Z;
-    const halfHeight =
-      Math.tan((this.camera.fov * Math.PI) / 360) * distance * PLATE_FILL;
-    this.resonance.setExtent(halfHeight * this.camera.aspect, halfHeight);
+    const frustumHalfHeight = Math.tan((this.camera.fov * Math.PI) / 360) * distance;
+    const frustumHalfWidth = frustumHalfHeight * this.camera.aspect;
+    // The free field, not the window: on a phone the bottom of the screen is
+    // a sheet of controls, and a plate centred in the window sat almost
+    // entirely behind it. What is left is a short, wide letterbox, which is
+    // a shape the plate is perfectly happy to take.
+    const halfVisible = frustumHalfHeight * (1 - this.fieldInsetBottom);
+    const aspect = plateAspectFor(frustumHalfWidth / halfVisible);
+    const halfHeight = Math.min(halfVisible, frustumHalfWidth / aspect) * PLATE_FILL;
+    this.resonance.setExtent(halfHeight * aspect, halfHeight);
+    // Stand it in the middle of what can be seen.
+    this.resonance.group.position.y = frustumHalfHeight * this.fieldInsetBottom;
+  }
+
+  /**
+   * How much of the bottom of the viewport is covered by something opaque —
+   * the phone dock, and nothing else so far. 0 on a wide screen.
+   *
+   * Only the plate reads it. The ink field and the wind map are full-bleed
+   * washes with no single object in them to be hidden; a Chladni figure is
+   * one object, and half of one is not a figure.
+   */
+  setFieldInset(bottom: number): void {
+    const next = Math.max(0, Math.min(0.8, bottom));
+    if (Math.abs(next - this.fieldInsetBottom) < 0.004) return;
+    this.fieldInsetBottom = next;
+    this.syncPlateExtent();
   }
 
   setTheme(theme: SceneTheme): void {

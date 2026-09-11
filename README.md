@@ -144,18 +144,36 @@ field, the same room, but with a polyphonic instrument at the front of it.
   drive, so the instrument blooms whichever visual is on screen: playing the
   orchestra leaves a mark on the room rather than only in the mix
 - **Resonance answers the harmony, not the level** — the plate's mode numbers come from the chord being held (the third of the chord sets one, the top of it the other), so a chord change is a figure change and the plate is showing you the interval. Ensemble gestures strike it: the grains jump and the figure reassembles. The camera settles square onto it, because a figure read at an angle shears into an unreadable diamond
-- **The plate is the shape of the window** — its bounds are measured from the
-  camera frustum, so it fills the screen at any size or aspect and reflows
-  live as the window changes, instead of sitting as a fixed square with a
-  third of a landscape window empty either side. A wide plate is filled by
-  scaling the *mode numbers* with the aspect rather than stretching the
-  figure: the cells stay square and there is simply more plate to put them
-  on, which is what a wider plate actually does. Past about 16:9 the
-  compensation caps and the remainder arrives as a gentle stretch — beyond
-  that the nodal lines crowd closer than a grain can draw, and a figure you
-  cannot read is worse than one slightly wider than it is tall. Grain count
-  follows the plate's area, so a bigger figure is drawn at the same weight
-  rather than thinning out
+- **The plate leans towards the window without becoming it** — a Chladni
+  figure is a *bounded* object: its diagonals run corner to corner, its
+  lines close on themselves or meet the edge, and it is symmetric under a
+  quarter turn, which only a square has. Cut to a 16:9 window it lost all
+  of that — the diagonals stopped somewhere in the middle of the screen, the
+  outer thirds were pattern with no figure in them, and the left and right
+  edges landed mid-cell. It read as wallpaper, which is the one thing a
+  Chladni figure is not. So the plate takes the *square root* of the
+  window's aspect and stops leaning at 4:3, and the field frames it: a plate
+  on a bench, with room around it. Its bounds still come from the camera
+  frustum and still reflow live as the window changes
+- **What little shape it does take is split between cells and stretch** —
+  half absorbed by scaling the mode numbers, which adds cells without
+  distorting them, and half arriving as stretch. Both halves stay under
+  about 15%, which is well below what the eye reads as a distortion, and it
+  is the right way round: the eye is reading the symmetry and the closed
+  lines, not measuring the cells
+- **The plate is sized to the field you can actually see** — on a phone the
+  bottom of the screen is a sheet of controls, and a plate centred in the
+  *window* sat almost entirely behind it. What is left is a short, wide
+  letterbox, which is a shape the plate is perfectly happy to take
+- **Sand covers the same fraction of the plate at every size** — grains are
+  drawn in screen pixels, so a small plate draws smaller sand and keeps the
+  count, and a plate with room to spread keeps the desktop's grain and takes
+  the extra room as more sand. Getting that wrong is not subtle in either
+  direction: hold the count and the grain and a phone plate goes half solid;
+  shrink the grain and scale the count by area and the same figure arrives
+  as a scatter of dust. The plate's agitation is scaled the same way, so a
+  small plate settles as sharply as a large one rather than being shaken
+  apart by a throw calibrated for three times its width
 
 ### UI
 
@@ -166,10 +184,69 @@ Two edge rails frame an open center, each pairing live data with the knobs that 
 - **Top centre — what you are looking at:** the Ink / Currents / Resonance switch and the light / dark field toggle, mirroring Drift / Calibrate / Play at the bottom. Outside the rails, so both stay reachable in Drift
 - **10 knobs** — six sound, four vision (see below)
 - **Piece picker (Calibrate only)** — choose a length and a world and play that piece now, instead of waiting for two weighted draws to agree. Drift keeps its unpredictability; direct control belongs to Calibrate
-- **Play stage (Play only)** — the instrument stands in the middle of the screen, above the mode switch and clear of both rails: Melody / Beat, connected controller, eight voices (or the black-key kit legend), the in-key / chromatic toggle, octave, blend, the field's live key, what is sounding in full size, and a two-octave keyboard wide enough to hit. The rails keep what they are for — the engine, and the knobs that steer it
+- **Play stage (Play only)** — the instrument stands in the middle of the screen, above the mode switch and clear of both rails: Melody / Beat, connected controller, eight voices (or the black-key kit legend), the in-key / chromatic toggle, octave, blend, the field's live key, what is sounding in full size, and a keyboard wide enough to hit. The rails keep what they are for — the engine, and the knobs that steer it
 - **Knob automator** — slow, phrase-aligned autonomous drift when you leave the controls alone
 - **PerfMonitor** — a dev-only health gate (press **D**) reporting frame rate, audio-context health, console errors, and heap growth
 - **Error overlay** — a clear message if WebGL or audio fails to start
+
+### Readout or control: one rule
+
+Each rail is two named bands, because it was carrying two completely
+different kinds of thing in the same 9px type and there was no way to tell
+them apart except by clicking:
+
+- **Readout · live** — what the engine is doing. No box anywhere in it, muted
+  ink, and the two canvases have pointer events off entirely, so a thumb
+  cannot even test them. A dot next to the header breathes, which is the one
+  animated thing in the rail and says "this is arriving on its own" faster
+  than a word can.
+- **Controls · tap · drag** — what changes it. Everything in the band has a
+  1px box, full-contrast ink, a press state and a focus ring.
+
+**If it has a box around it, you can touch it.** That rule now holds across
+the whole interface — the mode and view switches, the piece picker, the play
+panel, and the two rails.
+
+Two things moved to make it true. The phase name in the movement row *was* a
+button dressed as a label, and shift-clicking it skipped the movement — a
+control that looked like text, plus one that was invisible and impossible to
+reach from a phone, which has no shift key. Both are now ordinary buttons in
+the controls band: **Next phase** and **Next movement**, with **Next form**
+opposite them in the visual rail. The knob dials grew a filled arc, so a dial
+shows its value on itself and reads as something set to a position rather
+than as a ring drawn for decoration.
+
+### On a phone
+
+Below 820px — a phone, or a narrow desktop window — two 268px rails and a
+field worth looking at cannot stand side by side, so the rails stop being
+rails. The mode switch, a tab bar and one panel at a time become a single
+sheet docked to the bottom edge, capped at two thirds of the screen so the
+field keeps the rest. Nothing moves in the DOM: the wrapper is
+`display: contents` on a wide screen and a flex column below the breakpoint.
+
+- **Tabs** follow the mode — Audio / Visual in Calibrate, with Play added and
+  selected first in Play mode. Drift has no tabs, because Drift has no
+  controls on any screen size
+- **Hide** collapses the sheet to just the mode switch and the tabs, so the
+  field has the whole screen and getting back is one tap. It is what a
+  double-click does on a wide screen
+- **Controls come first in the sheet**, readout under them: you can only see
+  one band at a time down there, and what you opened Calibrate for is the
+  knobs, not the graph of what they did
+- **Knobs take a finger** — 46px dials on any touchscreen, pointer-captured
+  so the drag survives sliding off, and `touch-action: none` so a vertical
+  drag turns the knob instead of scrolling the sheet. A second finger can
+  work a knob while the first holds a chord
+- **One octave of keys** in Play instead of two: fifteen white keys on a
+  390px screen is 24px each, which is narrower than the finger aiming at
+  them. Eight keys is about 44px, and the octave stepper covers the rest of
+  the range. The keyboard is sticky to the bottom of the sheet, so its
+  settings scroll behind it rather than taking it off screen. The computer
+  keybed and any MIDI controller keep their full two-octave span either way
+- Both data panels are drawn to the width of the column they are in rather
+  than a fixed 220px, and MIDI learn folds away — eight cells across is
+  unusable at this width, and Web MIDI barely exists on a phone
 
 ## Requirements
 
@@ -246,15 +323,16 @@ MIDI device profiles and learned bindings.
 
 | Input | Action |
 |-------|--------|
-| **Double-click** or **F11** | Hide / show both rails (full-bleed view) |
+| **Double-click** or **F11** | Hide / show both rails (full-bleed view). On a phone, collapse the dock — same as the **Hide** button |
 | **D** | Toggle the PerfMonitor health readout (Drift and Calibrate — in Play, D is a key) |
 | **Ink / Currents / Resonance** | Switch visual (top centre) |
 | **Light field / Dark field** | Toggle visual palette (top centre) |
 | **A**–**;** / **W E T Y U O P** (Play) | Computer keybed — white keys and black keys |
 | **Z** / **X** (Play) | Shift the keybed down / up an octave |
-| **Mov** button | Advance movement phase |
-| **Shift + Mov** | Skip to next movement |
-| **Form** button | Nudge visual morphology emphasis |
+| **Next phase** button | Advance movement phase |
+| **Next movement** button | Dissolve this piece and begin another |
+| **Next form** button | Nudge visual morphology emphasis |
+| **↑ ↓ ← →** on a focused knob | Move it by 2 (hold **shift** for 10); **home** / **end** for either end |
 
 ## MIDI controllers
 

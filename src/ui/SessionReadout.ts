@@ -15,14 +15,26 @@ function clock(seconds: number): string {
   return `${mins}:${String(total % 60).padStart(2, '0')}`;
 }
 
-/** Audio-side session readout — movement, phase, progress. Lives in the left rail. */
+/**
+ * Audio-side session readout — movement, phase, progress.
+ *
+ * Split in two on purpose. `element` is the readout and contains nothing you
+ * can press: where the piece has got to, and how far through it is. `controls`
+ * is the pair of buttons that move it on. They used to be the same thing — the
+ * phase name was a button, and shift-clicking it skipped the movement — which
+ * meant the one visible control in the rail looked like a label, and the other
+ * one was invisible and unreachable from a phone, which has no shift key.
+ */
 export class SessionReadout {
   readonly element: HTMLElement;
+  readonly controls: HTMLElement;
   private readonly movIndexEl: HTMLElement;
-  private readonly phaseBtn: HTMLButtonElement;
+  private readonly phaseEl: HTMLElement;
   private readonly movFill: HTMLElement;
   private readonly movMeta: HTMLElement;
   private readonly subEl: HTMLElement;
+  private readonly phaseBtn: HTMLButtonElement;
+  private readonly movementBtn: HTMLButtonElement;
 
   constructor(
     private readonly onNextPhase: () => void,
@@ -33,13 +45,7 @@ export class SessionReadout {
 
     const movRow = this.buildRow();
     this.movIndexEl = movRow.tag;
-    this.phaseBtn = movRow.action;
-    this.phaseBtn.classList.add('readout-action--primary');
-    this.phaseBtn.title = 'Next phase · shift-click for next movement';
-    this.phaseBtn.addEventListener('click', (e) => {
-      if (e.shiftKey) this.onNextMovement();
-      else this.onNextPhase();
-    });
+    this.phaseEl = movRow.value;
     this.movFill = movRow.fill;
     this.movMeta = movRow.meta;
 
@@ -47,6 +53,16 @@ export class SessionReadout {
     this.subEl.className = 'readout-sub';
 
     this.element.append(movRow.row, this.subEl);
+
+    this.controls = document.createElement('div');
+    this.controls.className = 'readout-actions';
+    this.phaseBtn = actionButton('Next phase', 'Move the piece on to its next phase', () =>
+      this.onNextPhase(),
+    );
+    this.movementBtn = actionButton('Next movement', 'Dissolve this piece and begin another', () =>
+      this.onNextMovement(),
+    );
+    this.controls.append(this.phaseBtn, this.movementBtn);
   }
 
   update(movement: MovementReadoutState): void {
@@ -55,7 +71,7 @@ export class SessionReadout {
     const movPct = Math.round(harmonic.movementProgress * 100);
 
     this.movIndexEl.textContent = `M${String(harmonic.movementIndex + 1).padStart(2, '0')}`;
-    this.phaseBtn.textContent = PHASE_LABELS[harmonic.movementPhase];
+    this.phaseEl.textContent = PHASE_LABELS[harmonic.movementPhase];
     this.movFill.style.width = `${movPct}%`;
     // Movements now run anywhere from 45 seconds to nearly half an hour, so
     // a bare percentage says nothing about what kind of piece you're in.
@@ -65,6 +81,7 @@ export class SessionReadout {
 
     const busy = pendingMovementSkip || harmonicTransitioning;
     this.phaseBtn.disabled = busy;
+    this.movementBtn.disabled = busy;
 
     if (pendingMovementSkip) {
       this.subEl.textContent = 'dissolving';
@@ -82,7 +99,7 @@ export class SessionReadout {
   private buildRow(): {
     row: HTMLElement;
     tag: HTMLElement;
-    action: HTMLButtonElement;
+    value: HTMLElement;
     fill: HTMLElement;
     meta: HTMLElement;
   } {
@@ -93,9 +110,8 @@ export class SessionReadout {
     tag.className = 'readout-tag';
     tag.textContent = 'Mov';
 
-    const action = document.createElement('button');
-    action.type = 'button';
-    action.className = 'readout-action';
+    const value = document.createElement('span');
+    value.className = 'readout-value';
 
     const track = document.createElement('div');
     track.className = 'readout-track';
@@ -108,7 +124,17 @@ export class SessionReadout {
     const meta = document.createElement('span');
     meta.className = 'readout-meta';
 
-    row.append(tag, action, track, meta);
-    return { row, tag, action, fill, meta };
+    row.append(tag, value, track, meta);
+    return { row, tag, value, fill, meta };
   }
+}
+
+function actionButton(label: string, title: string, onClick: () => void): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'readout-action';
+  button.textContent = label;
+  button.title = title;
+  button.addEventListener('click', onClick);
+  return button;
 }

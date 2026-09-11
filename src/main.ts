@@ -26,6 +26,8 @@ import { PlayController } from './input/PlayController';
 import { DEFAULT_BLEND_ID, DEFAULT_VOICE_MODE } from './audio/PlayBlend';
 import { DEFAULT_PRESET_ID, findPreset } from './audio/PlayPresets';
 import { VisualModeToggle } from './ui/VisualModeToggle';
+import { Dock } from './ui/Dock';
+import { railSection } from './ui/RailSection';
 import { loadStoredVisualMode } from './visual/VisualMode';
 import { clockStep } from './audio/EngineClock';
 import type { MovementCharacter } from './audio/types';
@@ -44,6 +46,10 @@ const leftKnobs = document.getElementById('rail-left-knobs')!;
 const rightData = document.getElementById('rail-right-data')!;
 const rightKnobs = document.getElementById('rail-right-knobs')!;
 const playStage = document.getElementById('play-stage')!;
+const dockElement = document.getElementById('dock')!;
+const dockBar = document.getElementById('dock-bar')!;
+const dockTabs = document.getElementById('dock-tabs')!;
+const dockCollapse = document.getElementById('dock-collapse') as HTMLButtonElement;
 const viewToggleSlot = document.getElementById('view-toggle')!;
 const modeToggleSlot = document.getElementById('mode-toggle')!;
 const overlay = document.getElementById('overlay')!;
@@ -88,15 +94,23 @@ const controls = new Controls((knobs) => {
 audioEngine.setKnobs(controls.getKnobs());
 
 // ——— Left rail: audio ———
+// Two named bands rather than one column of small type. Everything in the
+// readout band is the engine talking and cannot be pressed; everything in the
+// controls band has a box around it and can. Before the split, the phase name
+// was a button that looked like a word and the cymatics canvas was a picture
+// that looked like a button.
+const audioReadout = railSection('readout', 'Readout');
+const audioControls = railSection('controls', 'Controls');
 const sessionReadout = new SessionReadout(
   () => audioEngine.requestNextPhase(),
   () => audioEngine.requestNextMovement(),
 );
-const cymaticsOverlay = new CymaticsOverlay(leftData);
+const cymaticsOverlay = new CymaticsOverlay();
 const piecePicker = new PiecePicker((request) => audioEngine.requestPiece(request));
-leftData.insertBefore(sessionReadout.element, leftData.firstChild);
-leftData.appendChild(piecePicker.element);
-leftKnobs.appendChild(controls.audioElement);
+audioReadout.body.append(sessionReadout.element, cymaticsOverlay.element);
+audioControls.body.append(sessionReadout.controls, piecePicker.element, controls.audioElement);
+leftData.appendChild(audioReadout.element);
+leftKnobs.appendChild(audioControls.element);
 
 // ——— Play: the instrument at the front of the mix ———
 const storedPlay = loadStoredPlayState();
@@ -168,9 +182,51 @@ playPanel.setStatus('idle', null);
 // modes, the way it always hid the panel.
 playStage.appendChild(playPanel.element);
 
+// ——— The phone layout ———
+// Below the width where two rails and a field fit side by side, the rails,
+// the instrument and the mode switch become one bottom sheet with tabs. The
+// dock publishes that state as attributes on <body>; the stylesheet does the
+// rest, and no node moves between the two layouts.
+// Read by syncFieldInset, which the Dock calls from its own constructor —
+// before `dock` itself is bound, so it cannot ask the dock.
+let dockCompact = false;
+const dock = new Dock(dockBar, dockTabs, dockCollapse, mode, {
+  onCompactChange: (compact) => {
+    dockCompact = compact;
+    playPanel.setCompact(compact);
+    syncFieldInset();
+  },
+  onLayoutChange: () => syncFieldInset(),
+});
+
+/**
+ * Tell the field how much of the screen the sheet is standing on.
+ *
+ * Only Resonance acts on it, and it has to: the plate is one object, and
+ * centred in the window on a phone it sat almost entirely behind the
+ * controls. On a wide screen the dock generates no box at all, so there is
+ * nothing covered and the measurement is skipped rather than read off a
+ * zero-sized rect.
+ */
+function syncFieldInset(): void {
+  if (!visualizer) return;
+  if (!dockCompact) {
+    visualizer.setFieldInset(0);
+    return;
+  }
+  const height = window.innerHeight;
+  const covered = Math.max(0, height - dockElement.getBoundingClientRect().top);
+  visualizer.setFieldInset(height > 0 ? covered / height : 0);
+}
+
 // ——— Right rail: visual ———
-const visualScope = new VisualScope(rightData, () => visualizer?.requestNextForm());
-rightKnobs.appendChild(controls.visualElement);
+const visualReadoutSection = railSection('readout', 'Readout');
+const visualControlsSection = railSection('controls', 'Controls');
+const visualScope = new VisualScope(() => visualizer?.requestNextForm());
+visualReadoutSection.body.appendChild(visualScope.element);
+visualControlsSection.body.append(visualScope.controls, controls.visualElement);
+rightData.appendChild(visualReadoutSection.element);
+rightKnobs.appendChild(visualControlsSection.element);
 
 // ——— Top centre: what you are looking at ———
 // Which visual and which field, in the open above the canvas rather than in
@@ -212,6 +268,7 @@ function setMode(next: AppMode): void {
   storeMode(next);
   controls.setMode(next);
   audioEngine.setMode(next);
+  dock.setMode(next);
   playController.setActive(next === 'play');
   if (isDirectMode(next)) {
     // A calibration survives a Drift excursion.
@@ -319,7 +376,10 @@ function loop(now: number): void {
 
 requestAnimationFrame(loop);
 
-window.addEventListener('resize', () => visualizer?.resize());
+window.addEventListener('resize', () => {
+  visualizer?.resize();
+  syncFieldInset();
+});
 
 window.addEventListener('beforeunload', () => {
   visualizer?.dispose();
@@ -328,6 +388,13 @@ window.addEventListener('beforeunload', () => {
 });
 
 function toggleRails(): void {
+  // In the phone layout the rails are one docked sheet, so the thing to get
+  // out of the way is the sheet — hiding its panels would leave the tab bar
+  // stranded at the bottom of the screen with nothing under it.
+  if (dock.isCompact()) {
+    dock.toggleCollapsed();
+    return;
+  }
   const hide = !railLeft.hidden;
   railLeft.hidden = hide;
   railRight.hidden = hide;
@@ -345,6 +412,9 @@ startBtn.addEventListener('click', async () => {
     modeToggleSlot.hidden = false;
     viewToggleSlot.hidden = false;
     playStage.hidden = false;
+    dockBar.hidden = false;
+    // The sheet only takes its full height once the panels are revealed.
+    syncFieldInset();
     cymaticsOverlay.show();
   } catch (err) {
     const msg =

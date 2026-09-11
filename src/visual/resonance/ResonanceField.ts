@@ -4,50 +4,43 @@ import { getThemePalette, type SceneTheme } from '../ScenePalette';
 import type { FieldDrive } from '../FieldDrive';
 import { moodChroma } from '../Chroma';
 import { applyGhostTheme, createGhostMaterial, type GhostMaterial } from '../three/ghostMaterial';
-import { modeForChord, plateAt, type PlateGradient, type PlateMode } from './plate';
+import {
+  modeAspectFor,
+  modeForChord,
+  plateAt,
+  type PlateGradient,
+  type PlateMode,
+} from './plate';
 
 /**
- * Grains at the baseline square plate, and the ceiling once a wide window
- * asks for a bigger one. The target scales with the plate's area so that
- * density — grains per unit of plate — is the same whatever the window is
- * doing; a wider plate with the same grain count would simply draw the
- * same figure fainter.
+ * Grains at the baseline square plate, and the ceiling above it.
+ *
+ * What has to stay constant across plate sizes is how much of the plate the
+ * sand covers — count times grain area over plate area. Hold that, and a
+ * small plate is simply the same plate seen smaller, which is the one thing
+ * that reliably still reads as a Chladni figure.
+ *
+ * Getting it wrong is not subtle in either direction. A grain is sized in
+ * screen pixels, so keeping the count and shrinking the plate buries the
+ * figure under its own sand — at a phone's letterbox the plate went half
+ * solid. Shrinking the grains but scaling the count by area leaves the
+ * lines drawn a third as heavily, which is a scatter of dust where a figure
+ * should be. Both were tried on the way here.
  */
 const GRAINS_PER_SQUARE = 4000;
 const CAPACITY = 8000;
 
 /**
- * The plate takes the shape of the window.
+ * The plate's size when the window is square, and the reference the grain
+ * density is measured against.
  *
- * It used to be a fixed square, which meant a landscape window framed it
- * with a third of the screen empty on either side. It is still a single
- * object seen whole — the bounds come from the camera frustum with a
- * margin, so the edges stay on screen and it reads as a plate on a bench
- * rather than a wall — but the bench is now as wide as the room.
- *
- * Filling that width is the job of the mode aspect rather than a stretch:
- * see plateAt. The figure is never distorted, there is simply more plate
- * to put it on.
+ * The bounds come from the camera frustum with a margin, so the edges stay
+ * on screen and it reads as a plate on a bench rather than a wall — and the
+ * shape it takes leans towards the window's without becoming it, which is
+ * what keeps the figure a figure. See `plateAspectFor`.
  */
 const BASE_HALF_EXTENT = 2.4;
 export const PLANE_Z = 9;
-
-/**
- * How far the mode numbers will follow the window before the figure is
- * allowed to stretch instead.
- *
- * Scaling the modes keeps the cells square, but it also multiplies the
- * nodal lines, and past a point they crowd closer than a grain can draw:
- * an ultrawide window at full compensation turned the outer thirds of the
- * plate into fine texture rather than a figure. Beyond this the plate
- * keeps taking the full width and the residual arrives as a gentle
- * stretch, which costs a little cell squareness and keeps the lines
- * resolvable — the right way round, because a figure you cannot read is
- * worse than one slightly wider than it is tall.
- *
- * 1.9 covers 16:9 and 16:10 exactly, so the common cases are undistorted.
- */
-const MAX_MODE_ASPECT = 1.9;
 
 interface Grain {
   x: number;
@@ -122,14 +115,32 @@ export class ResonanceField {
   }
 
   /**
-   * Resize the plate to the window. Grains already on it keep their world
-   * positions: those now outside the plate are re-scattered by the escape
-   * check on the next frame, and the figure redraws around them, so a
-   * window drag reshapes the plate rather than restarting it.
+   * Resize the plate to the window.
+   *
+   * Grains already on it keep their world positions, so a window drag
+   * reshapes the plate rather than restarting it: those now *outside* it are
+   * re-scattered by the escape check on the next frame, and the figure
+   * redraws around the rest.
+   *
+   * Growing needs the nudge below, because nothing pushes a grain outwards.
+   * Left alone, the sand stays where it was and the new plate fills only as
+   * grains reach the end of their six-to-twenty-second lives — so tapping
+   * Show on a phone gave a small figure adrift in a large empty plate for
+   * the best part of half a minute. Cutting the remaining lives short
+   * re-sprinkles the whole plate through the path that already exists, and
+   * the figure reassembles over a second or two, which reads as the plate
+   * being struck.
    */
   setExtent(halfWidth: number, halfHeight: number): void {
-    this.boundX = Math.max(0.5, halfWidth);
-    this.boundY = Math.max(0.5, halfHeight);
+    const nextX = Math.max(0.5, halfWidth);
+    const nextY = Math.max(0.5, halfHeight);
+    const grew = nextX > this.boundX * 1.05 || nextY > this.boundY * 1.05;
+    this.boundX = nextX;
+    this.boundY = nextY;
+    if (!grew) return;
+    for (const g of this.pool) {
+      if (g.active) g.life = Math.min(g.life, 0.2 + Math.random() * 1.4);
+    }
   }
 
   getActiveCount(): number {
@@ -163,37 +174,51 @@ export class ResonanceField {
     const levelTarget = features.overall * 0.6 + features.mids * 0.25 + features.bass * 0.15;
     this.level += (levelTarget - this.level) * (1 - Math.exp(-dt / 0.35));
 
-    // Grains per unit of plate, not grains per plate: a window twice as
-    // wide gets twice the sand, so the figure is drawn at the same weight
-    // rather than thinning out as it grows.
-    const area = (this.boundX * this.boundY) / (BASE_HALF_EXTENT * BASE_HALF_EXTENT);
+    // How big this plate is against the baseline square one — the geometric
+    // mean of its half-extents, so it is one isotropic number whatever shape
+    // the window asked for. The grain count, the grain size and the
+    // agitation are all measured in it.
+    const size = Math.sqrt((this.boundX * this.boundY) / (BASE_HALF_EXTENT * BASE_HALF_EXTENT));
+    // Sand shrinks with the plate, down to the plate, and no further: a
+    // plate with room to spread keeps the grain the desktop has always had
+    // and takes the extra room as more sand instead.
+    const grainScale = Math.min(1, size);
+    // Constant coverage: (plate area) / (grain area), both relative to the
+    // baseline. Below full size the two cancel and the count holds; above
+    // it, the grain is pinned and this is the old area scaling.
+    const coverage = (size / grainScale) ** 2;
     const aliveTarget = Math.min(
       CAPACITY,
-      Math.floor(GRAINS_PER_SQUARE * area * (0.32 + knobs.grain * 0.68) * (0.6 + breathe * 0.4)),
+      Math.floor(GRAINS_PER_SQUARE * coverage * (0.32 + knobs.grain * 0.68) * (0.6 + breathe * 0.4)),
     );
 
     const dark = this.theme === 'dark';
     const mat = this.material.uniforms;
     // Focus trades a fine dusting for coarser, heavier grains — from the
     // drive, so the director's focus arc reaches the plate too.
-    mat.uSizeScale.value = 0.19 * (0.7 + drive.focus * 0.9) * (0.75 + knobs.grain * 0.4);
+    mat.uSizeScale.value =
+      0.19 * grainScale * (0.7 + drive.focus * 0.9) * (0.75 + knobs.grain * 0.4);
     mat.uAlpha.value = (dark ? 0.34 : 0.32) * (0.85 + drive.focus * 0.4);
     mat.uFogDensity.value = (dark ? 0.03 : 0.028) * drive.fog;
     moodChroma(drive.mood, mat.uChroma.value);
 
-    // Square cells where the window is a shape the modes can follow; past
-    // that, a gentle stretch rather than lines too fine to read.
-    const modeAspect = Math.max(
-      1 / MAX_MODE_ASPECT,
-      Math.min(MAX_MODE_ASPECT, this.boundX / this.boundY),
-    );
+    // Some of the plate's shape as extra cells, the rest as a little
+    // stretch. All of it as cells is what cost the figure its corners.
+    const modeAspect = modeAspectFor(this.boundX / this.boundY);
 
     // How hard the grains are thrown about, and how fast they settle back.
     // A phrase closing is a second, softer strike; the field thrown open
     // scatters the plate wide.
+    //
+    // Scaled by the plate, because the throw is a world distance and the
+    // settling step that fights it is measured in plate widths. Left
+    // absolute, the same agitation that draws a clean figure on a full-size
+    // plate shakes a small one — a phone's letterbox — into loose sand. It
+    // is the physical reading too: a smaller plate flexes less.
     let agitation =
       (0.03 + this.level * 0.38 + drive.strike * 0.75 + drive.ripple * 0.35 + drive.expand * 0.5) *
-      (0.4 + knobs.ripple * 1.2);
+      (0.4 + knobs.ripple * 1.2) *
+      size;
     // The inhale does the opposite here to everywhere else, and it should:
     // the breath before a gesture is the plate going still, and a still
     // plate is one that draws its figure sharply. Ink contracts, the wind

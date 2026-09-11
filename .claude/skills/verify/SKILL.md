@@ -34,10 +34,21 @@ Flows that matter:
   verified indirectly: the cymatics BASS/MID bars and the advancing BAR
   counter prove the analyser sees a live signal.
 - Knobs: mouse-down on a `.knob-dial`, move vertically in small steps,
-  mouse-up. Read back via the sibling `.knob-value` text.
+  mouse-up (pointer events, so Playwright's mouse and `Input.dispatchTouchEvent`
+  both drive them). Read back via the sibling `.knob-value` text, or the
+  dial's own `--knob-turn` custom property and `aria-valuenow`. 200px of
+  travel is the full 0–1 sweep. A focused dial also takes arrow keys, home
+  and end.
 - Mode: the Drift/Calibrate/Play toggle is `#mode-toggle` (three buttons,
   in that order); body has `data-mode`. Knob persistence writes `ao-knobs`
   (Calibrate and Play, debounced 500ms).
+- Each rail is two `.rail-section` bands — `.rail-section--readout` (nothing
+  in it is pressable; both canvases are `.scope-canvas` with pointer events
+  off) and `.rail-section--controls`. The movement row is now text only:
+  `.readout-value` holds the phase name, and the buttons that were hidden in
+  it are `.readout-action` buttons in the controls band, captioned `Next
+  phase`, `Next movement` and `Next form`. There is no shift-click path any
+  more.
 - Top-centre view toggles (`#view-toggle`, revealed on start like
   `#mode-toggle`): a three-button visual group (`Ink | Currents |
   Resonance`, the active one carrying `is-active`) and the theme button,
@@ -175,6 +186,17 @@ a fresh switch looks empty.
 - The left rail's `.rail-data` scrolls (`min-height: 0; overflow-y: auto`) so
   a tall panel can't walk the knob grid off the bottom. An element below the
   fold is scrolled, not missing — `scrollIntoViewIfNeeded()` before clicking.
+  In the compact layout the `.rail` itself is the scroller instead.
+- Below 820px viewport width the layout switches to the phone dock and a lot
+  of the above moves. `document.body` carries `data-layout`
+  (`compact`/`wide`), `data-panel` (`audio`/`visual`/`play`, absent in Drift)
+  and `data-dock` (`open`/`collapsed`). The tab bar is `#dock-bar` (revealed
+  on start like `#mode-toggle`), its tabs `#dock-tabs button`, and
+  `#dock-collapse` toggles the sheet. Panels that aren't selected are
+  `display: none`, so an element screenshot of the hidden rail hangs the same
+  way it does in Drift — switch tabs first. Play draws one octave there
+  (13 `.play-key-cap`s, not 25) and hides `.play-learn`; crossing the
+  breakpoint with `setViewportSize` rebuilds the keys.
 - The engine no longer runs on `requestAnimationFrame` — it advances from
   the audio clock on a `setInterval`. To simulate a backgrounded tab, stub
   `window.requestAnimationFrame` so it *stores* the pending callback rather
@@ -187,3 +209,10 @@ a fresh switch looks empty.
   `page.evaluate` works either way — hidden elements are still in the DOM.
 - Visuals parented inside `worldGroup` are scaled ~2.3x; scene-level
   planes must be sized to the camera frustum (fov 42, camera z ≈ 16 ± drift).
+- The Resonance plate is deliberately *not* the shape of the window: it takes
+  the square root of the window's aspect, caps at 4:3, and is fitted to the
+  field left over above the phone dock (`Visualizer.setFieldInset`). So on a
+  wide screen it stands in the middle with margins either side, and on a
+  phone it is a letterbox above the sheet — both are correct. Judge it on
+  whether the diagonals reach the plate's own corners; when they stop
+  short, the plate has been cut too wide.

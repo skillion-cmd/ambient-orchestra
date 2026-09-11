@@ -21,9 +21,8 @@ import type { HarmonicContext, MovementPhase } from '../../audio/types';
  * m are held as floats rather than integers so a chord change *morphs*
  * through the figures between the two rather than cutting.
  *
- * The plate takes the shape of the window rather than staying square; see
- * `aspect` on plateAt for how a rectangle gets a figure without one being
- * stretched to fit it.
+ * The plate leans towards the shape of the window without ever becoming it;
+ * see `plateAspectFor` for why a figure stops being one if it does.
  */
 export interface PlateMode {
   n: number;
@@ -43,27 +42,20 @@ const PI = Math.PI;
 /**
  * ψ and its gradient at one point. Analytic — no finite differences.
  *
- * `aspect` is the plate's width over its height, and it scales the mode
- * numbers along u rather than stretching the figure. That distinction is
- * the whole reason it is a parameter.
- *
- * A plate that fills a landscape window is a rectangle, and there are two
- * ways to put a figure on one. Stretching the square figure to fit makes
- * every cell oblong and throws away the diagonal symmetry — the thing that
- * makes a Chladni figure read as one, and the same symmetry the camera's
- * plane lock exists to protect. Scaling the mode numbers instead keeps
- * every cell square and simply puts more of them along the long axis,
- * which is what a wider plate actually does: the wavelength is set by the
- * plate's stiffness, not by the shape of the window you are watching it
- * through.
- *
- * The identity that falls out is worth stating, because it is what
- * guarantees no distortion: for a point at world (x, y) on a plate of
- * half-height B and half-width aB,
+ * `aspect` scales the mode numbers along u, which puts *more cells* on a
+ * wider plate rather than stretching the ones it has. The identity it makes
+ * good on: for a point at world (x, y) on a plate of half-height B and
+ * half-width aB,
  *
  *   plateAt(x / (aB), y / B, mode, out, a) === plateAt(x / B, y / B, mode, out, 1)
  *
  * — the same figure at the same scale, seen over a wider stretch of plate.
+ *
+ * That is a true statement and, past a little of it, the wrong thing to do:
+ * see `modeAspectFor`. It is kept because a plate that is *slightly* wider
+ * than tall is better served by a little more plate than by a little
+ * stretch, and because at aspect 1 — the common case now — it costs
+ * nothing.
  */
 export function plateAt(
   u: number,
@@ -87,6 +79,54 @@ export function plateAt(
   out.psi = cnu * cmv - cmu * cnv;
   out.du = -nu * PI * snu * cmv + mu * PI * smu * cnv;
   out.dv = -m * PI * cnu * smv + n * PI * cmu * snv;
+}
+
+/**
+ * How much of the window's shape the plate is allowed to take.
+ *
+ * A Chladni figure is a *bounded* object. Its two diagonals run corner to
+ * corner, its nodal lines close on themselves or meet the edge, and the
+ * whole thing is symmetric under a quarter turn — which only exists on a
+ * square. Cut it to a 16:9 window and none of that survives: the diagonals
+ * stop somewhere in the middle of the screen, the outer thirds are pattern
+ * with no figure in them, and the left and right edges land wherever they
+ * land, mid-cell. It stops reading as a plate with sand on it and starts
+ * reading as wallpaper, which is what a Chladni figure is precisely not.
+ *
+ * So the plate leans towards the window's shape rather than adopting it.
+ * The lean is taken in log space, so a 2:1 window and a 1:2 one are treated
+ * alike, and it is capped: past `MAX_PLATE_ASPECT` the plate stops growing
+ * sideways and the field frames it, the same way a real plate sits on a
+ * bench with room around it.
+ */
+const PLATE_FOLLOW = 0.5;
+const MAX_PLATE_ASPECT = 1.34;
+
+export function plateAspectFor(windowAspect: number): number {
+  const safe = Math.max(0.05, windowAspect);
+  const leaned = Math.pow(safe, PLATE_FOLLOW);
+  return Math.max(1 / MAX_PLATE_ASPECT, Math.min(MAX_PLATE_ASPECT, leaned));
+}
+
+/**
+ * How much of the plate's shape arrives as extra cells rather than stretch.
+ *
+ * The remainder is stretch, and at these aspects that is the right way
+ * round. Full compensation is what turned a wide plate into wallpaper: the
+ * figure stayed undistorted and stopped being a figure. A whole figure
+ * carrying a few per cent of stretch still reads instantly as a Chladni
+ * plate — the eye is reading the symmetry and the closed lines, not
+ * measuring the cells — so the plate keeps the object and spends the
+ * distortion.
+ *
+ * Not zero, because a plate a third wider than tall does have a little more
+ * room on it, and a small amount of it is better given to the figure than
+ * to the aspect: half and half keeps both errors under about 15%.
+ */
+const MODE_FOLLOW = 0.5;
+
+export function modeAspectFor(plateAspect: number): number {
+  return Math.pow(Math.max(0.05, plateAspect), MODE_FOLLOW);
 }
 
 /** Fewer, broader figures where the piece is quiet; busier at the crest. */

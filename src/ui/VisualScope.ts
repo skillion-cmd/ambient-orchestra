@@ -3,8 +3,9 @@ import type { VisualReadoutState } from '../visual/VisualReadout';
 import { FORM_LABELS } from '../visual/VisualForm';
 import { resolveLayerBalance } from '../visual/LayerBalance';
 import type { ArtDirectorDirectives } from '../visual/ArtDirectorSkill';
+import { ScopeCanvas } from './ScopeCanvas';
 
-const W = 220;
+const DEFAULT_W = 220;
 const H = 182;
 
 interface Palette {
@@ -15,16 +16,21 @@ interface Palette {
 }
 
 /**
- * Visual-side data panel for the right rail: current form, particle population,
- * ghost/body layer balance, palette mood, and fog depth. Mirrors the audio-side
- * cymatics overlay so the two rails read as a matched instrument pair.
+ * Visual-side data panel: current form, particle population, ghost/body layer
+ * balance, palette mood, and fog depth. Mirrors the audio-side cymatics
+ * overlay so the two rails read as a matched instrument pair.
+ *
+ * Split the same way the session readout is: `element` reports and cannot be
+ * pressed, `controls` holds the one button — next form — that used to be
+ * hidden inside the readout row wearing a label's clothes.
  */
 export class VisualScope {
   readonly element: HTMLDivElement;
-  private readonly formBtn: HTMLButtonElement;
+  readonly controls: HTMLElement;
+  private readonly formValue: HTMLElement;
   private readonly formHint: HTMLElement;
   private readonly formMeta: HTMLElement;
-  private readonly canvas: HTMLCanvasElement;
+  private readonly canvas: ScopeCanvas;
   private readonly ctx: CanvasRenderingContext2D;
   private palette: Palette;
 
@@ -35,7 +41,7 @@ export class VisualScope {
   private fog = 1;
   private room = 0;
 
-  constructor(parent: HTMLElement, private readonly onNextForm: () => void) {
+  constructor(private readonly onNextForm: () => void) {
     this.element = document.createElement('div');
     this.element.className = 'visual-scope';
 
@@ -44,31 +50,30 @@ export class VisualScope {
     const tag = document.createElement('span');
     tag.className = 'readout-tag';
     tag.textContent = 'Form';
-    this.formBtn = document.createElement('button');
-    this.formBtn.type = 'button';
-    this.formBtn.className = 'readout-action readout-action--primary';
-    this.formBtn.title = 'Next form';
-    this.formBtn.addEventListener('click', () => this.onNextForm());
+    this.formValue = document.createElement('span');
+    this.formValue.className = 'readout-value';
     this.formHint = document.createElement('span');
     this.formHint.className = 'readout-hint';
     this.formMeta = document.createElement('span');
     this.formMeta.className = 'readout-meta';
-    row.append(tag, this.formBtn, this.formHint, this.formMeta);
+    row.append(tag, this.formValue, this.formHint, this.formMeta);
 
-    this.canvas = document.createElement('canvas');
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.canvas.width = Math.floor(W * dpr);
-    this.canvas.height = Math.floor(H * dpr);
-    this.canvas.style.width = `${W}px`;
-    this.canvas.style.height = `${H}px`;
-    const ctx = this.canvas.getContext('2d');
-    if (!ctx) throw new Error('2D canvas unavailable for visual scope');
-    this.ctx = ctx;
-    this.ctx.scale(dpr, dpr);
+    this.canvas = new ScopeCanvas(H, DEFAULT_W);
+    this.ctx = this.canvas.ctx;
 
-    this.element.append(row, this.canvas);
-    parent.appendChild(this.element);
+    this.element.append(row, this.canvas.element);
+    this.canvas.observe(this.element);
     this.palette = this.readPalette();
+
+    this.controls = document.createElement('div');
+    this.controls.className = 'readout-actions';
+    const formBtn = document.createElement('button');
+    formBtn.type = 'button';
+    formBtn.className = 'readout-action';
+    formBtn.textContent = 'Next form';
+    formBtn.title = 'Nudge the field towards another morphology';
+    formBtn.addEventListener('click', () => this.onNextForm());
+    this.controls.appendChild(formBtn);
   }
 
   refreshTheme(): void {
@@ -81,7 +86,7 @@ export class VisualScope {
     art: ArtDirectorDirectives,
     harmonic: HarmonicContext,
   ): void {
-    this.formBtn.textContent = FORM_LABELS[visual.form];
+    this.formValue.textContent = FORM_LABELS[visual.form];
     this.formHint.textContent = visual.awaitingTarget ? `→ ${FORM_LABELS[visual.targetForm]}` : '';
     this.formMeta.textContent = String(visual.particleCount);
 
@@ -101,22 +106,22 @@ export class VisualScope {
 
   private draw(): void {
     const c = this.ctx;
-    c.clearRect(0, 0, W, H);
+    c.clearRect(0, 0, this.canvas.width, H);
     c.font = "9px 'SF Mono', 'Menlo', 'Consolas', monospace";
     c.textBaseline = 'middle';
 
-    this.bar('PARTICLES', 18, this.particles, false);
+    this.bar('PARTICLES', 18, this.particles);
     this.splitBar('LAYER', 50, this.ghost, 'GHOST', 'BODY');
     this.splitBar('MOOD', 82, (this.mood + 1) / 2, 'COOL', 'WARM');
-    this.bar('FOG', 114, Math.max(0, Math.min(1, (this.fog - 0.7) / 0.6)), false);
+    this.bar('FOG', 114, Math.max(0, Math.min(1, (this.fog - 0.7) / 0.6)));
     this.splitBar('ROOM', 146, this.room, 'HERE', 'NEXT');
   }
 
   /** Left-to-right fill bar. */
-  private bar(label: string, y: number, value: number, _split: boolean): void {
+  private bar(label: string, y: number, value: number): void {
     const c = this.ctx;
     const barX = 64;
-    const barW = W - barX - 4;
+    const barW = this.canvas.width - barX - 4;
     c.fillStyle = this.palette.muted;
     c.textAlign = 'left';
     c.fillText(label, 2, y);
@@ -130,7 +135,7 @@ export class VisualScope {
   private splitBar(label: string, y: number, value: number, leftLab: string, rightLab: string): void {
     const c = this.ctx;
     const barX = 64;
-    const barW = W - barX - 4;
+    const barW = this.canvas.width - barX - 4;
     const mid = barX + barW / 2;
     c.fillStyle = this.palette.muted;
     c.textAlign = 'left';
