@@ -144,18 +144,36 @@ field, the same room, but with a polyphonic instrument at the front of it.
   drive, so the instrument blooms whichever visual is on screen: playing the
   orchestra leaves a mark on the room rather than only in the mix
 - **Resonance answers the harmony, not the level** — the plate's mode numbers come from the chord being held (the third of the chord sets one, the top of it the other), so a chord change is a figure change and the plate is showing you the interval. Ensemble gestures strike it: the grains jump and the figure reassembles. The camera settles square onto it, because a figure read at an angle shears into an unreadable diamond
-- **The plate is the shape of the window** — its bounds are measured from the
-  camera frustum, so it fills the screen at any size or aspect and reflows
-  live as the window changes, instead of sitting as a fixed square with a
-  third of a landscape window empty either side. A wide plate is filled by
-  scaling the *mode numbers* with the aspect rather than stretching the
-  figure: the cells stay square and there is simply more plate to put them
-  on, which is what a wider plate actually does. Past about 16:9 the
-  compensation caps and the remainder arrives as a gentle stretch — beyond
-  that the nodal lines crowd closer than a grain can draw, and a figure you
-  cannot read is worse than one slightly wider than it is tall. Grain count
-  follows the plate's area, so a bigger figure is drawn at the same weight
-  rather than thinning out
+- **The plate leans towards the window without becoming it** — a Chladni
+  figure is a *bounded* object: its diagonals run corner to corner, its
+  lines close on themselves or meet the edge, and it is symmetric under a
+  quarter turn, which only a square has. Cut to a 16:9 window it lost all
+  of that — the diagonals stopped somewhere in the middle of the screen, the
+  outer thirds were pattern with no figure in them, and the left and right
+  edges landed mid-cell. It read as wallpaper, which is the one thing a
+  Chladni figure is not. So the plate takes the *square root* of the
+  window's aspect and stops leaning at 4:3, and the field frames it: a plate
+  on a bench, with room around it. Its bounds still come from the camera
+  frustum and still reflow live as the window changes
+- **What little shape it does take is split between cells and stretch** —
+  half absorbed by scaling the mode numbers, which adds cells without
+  distorting them, and half arriving as stretch. Both halves stay under
+  about 15%, which is well below what the eye reads as a distortion, and it
+  is the right way round: the eye is reading the symmetry and the closed
+  lines, not measuring the cells
+- **The plate is sized to the field you can actually see** — on a phone the
+  bottom of the screen is a sheet of controls, and a plate centred in the
+  *window* sat almost entirely behind it. What is left is a short, wide
+  letterbox, which is a shape the plate is perfectly happy to take
+- **Sand covers the same fraction of the plate at every size** — grains are
+  drawn in screen pixels, so a small plate draws smaller sand and keeps the
+  count, and a plate with room to spread keeps the desktop's grain and takes
+  the extra room as more sand. Getting that wrong is not subtle in either
+  direction: hold the count and the grain and a phone plate goes half solid;
+  shrink the grain and scale the count by area and the same figure arrives
+  as a scatter of dust. The plate's agitation is scaled the same way, so a
+  small plate settles as sharply as a large one rather than being shaken
+  apart by a throw calibrated for three times its width
 
 ### UI
 

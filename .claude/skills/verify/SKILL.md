@@ -209,3 +209,10 @@ a fresh switch looks empty.
   `page.evaluate` works either way — hidden elements are still in the DOM.
 - Visuals parented inside `worldGroup` are scaled ~2.3x; scene-level
   planes must be sized to the camera frustum (fov 42, camera z ≈ 16 ± drift).
+- The Resonance plate is deliberately *not* the shape of the window: it takes
+  the square root of the window's aspect, caps at 4:3, and is fitted to the
+  field left over above the phone dock (`Visualizer.setFieldInset`). So on a
+  wide screen it stands in the middle with margins either side, and on a
+  phone it is a letterbox above the sheet — both are correct. Judge it on
+  whether the diagonals reach the plate's own corners; when they stop
+  short, the plate has been cut too wide.

@@ -46,6 +46,7 @@ const leftKnobs = document.getElementById('rail-left-knobs')!;
 const rightData = document.getElementById('rail-right-data')!;
 const rightKnobs = document.getElementById('rail-right-knobs')!;
 const playStage = document.getElementById('play-stage')!;
+const dockElement = document.getElementById('dock')!;
 const dockBar = document.getElementById('dock-bar')!;
 const dockTabs = document.getElementById('dock-tabs')!;
 const dockCollapse = document.getElementById('dock-collapse') as HTMLButtonElement;
@@ -186,9 +187,37 @@ playStage.appendChild(playPanel.element);
 // the instrument and the mode switch become one bottom sheet with tabs. The
 // dock publishes that state as attributes on <body>; the stylesheet does the
 // rest, and no node moves between the two layouts.
+// Read by syncFieldInset, which the Dock calls from its own constructor —
+// before `dock` itself is bound, so it cannot ask the dock.
+let dockCompact = false;
 const dock = new Dock(dockBar, dockTabs, dockCollapse, mode, {
-  onCompactChange: (compact) => playPanel.setCompact(compact),
+  onCompactChange: (compact) => {
+    dockCompact = compact;
+    playPanel.setCompact(compact);
+    syncFieldInset();
+  },
+  onLayoutChange: () => syncFieldInset(),
 });
+
+/**
+ * Tell the field how much of the screen the sheet is standing on.
+ *
+ * Only Resonance acts on it, and it has to: the plate is one object, and
+ * centred in the window on a phone it sat almost entirely behind the
+ * controls. On a wide screen the dock generates no box at all, so there is
+ * nothing covered and the measurement is skipped rather than read off a
+ * zero-sized rect.
+ */
+function syncFieldInset(): void {
+  if (!visualizer) return;
+  if (!dockCompact) {
+    visualizer.setFieldInset(0);
+    return;
+  }
+  const height = window.innerHeight;
+  const covered = Math.max(0, height - dockElement.getBoundingClientRect().top);
+  visualizer.setFieldInset(height > 0 ? covered / height : 0);
+}
 
 // ——— Right rail: visual ———
 const visualReadoutSection = railSection('readout', 'Readout');
@@ -347,7 +376,10 @@ function loop(now: number): void {
 
 requestAnimationFrame(loop);
 
-window.addEventListener('resize', () => visualizer?.resize());
+window.addEventListener('resize', () => {
+  visualizer?.resize();
+  syncFieldInset();
+});
 
 window.addEventListener('beforeunload', () => {
   visualizer?.dispose();
@@ -381,6 +413,8 @@ startBtn.addEventListener('click', async () => {
     viewToggleSlot.hidden = false;
     playStage.hidden = false;
     dockBar.hidden = false;
+    // The sheet only takes its full height once the panels are revealed.
+    syncFieldInset();
     cymaticsOverlay.show();
   } catch (err) {
     const msg =

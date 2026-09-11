@@ -12,6 +12,12 @@ const COMPACT_QUERY = '(max-width: 820px)';
 export interface DockHandlers {
   /** Fired when the layout crosses the breakpoint, and once on construction. */
   onCompactChange(compact: boolean): void;
+  /**
+   * Fired whenever the sheet's height may have changed — a mode change, a
+   * tab, a collapse, the breakpoint. The field behind it reads this to know
+   * how much of the screen it still has.
+   */
+  onLayoutChange(): void;
 }
 
 /**
@@ -125,5 +131,7 @@ export class Dock {
       'aria-label',
       this.collapsed ? 'Show the controls' : 'Hide the controls',
     );
+
+    this.handlers.onLayoutChange();
   }
 }

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { modeForChord, plateAt, type PlateGradient, type PlateMode } from './plate';
+import {
+  modeAspectFor,
+  modeForChord,
+  plateAspectFor,
+  plateAt,
+  type PlateGradient,
+  type PlateMode,
+} from './plate';
 import type { HarmonicContext, MovementPhase } from '../../audio/types';
 import { EMPTY_GROUP_ACTIVITY, MODE_SCALES } from '../../audio/types';
 
@@ -72,10 +79,9 @@ describe('plateAt', () => {
     }
   });
 
-  // The diagonal symmetry belongs to the square. A rectangular plate has no
-  // 90-degree rotation to be symmetric under, which is exactly why the mode
-  // numbers scale with the aspect instead of the figure being stretched into
-  // one — the cells stay square even though the plate is not.
+  // The diagonal symmetry belongs to the square, and it is most of what
+  // makes the figure read — which is why the plate is kept close to one
+  // rather than cut to the window. See plateAspectFor.
   it('is antisymmetric across the diagonal — the figures are symmetric', () => {
     const mode: PlateMode = { n: 2, m: 7 };
     for (const [u, v] of [
@@ -104,9 +110,11 @@ describe('plateAt', () => {
   });
 
   it('shows more of the same figure on a wider plate, never a stretched one', () => {
-    // The claim the aspect parameter exists to make: a point at world (x, y)
+    // The claim the aspect parameter makes good on: a point at world (x, y)
     // on a plate of half-height B and half-width aB sees exactly what the
     // square plate has at (x/B, y/B). Same figure, same scale, more plate.
+    // Only a fraction of the plate's shape is spent this way — see
+    // modeAspectFor — but that fraction is undistorted.
     const mode: PlateMode = { n: 3, m: 5 };
     const B = 2.4;
     for (const a of [1.33, 1.78, 2.4, 0.6]) {
@@ -186,5 +194,56 @@ describe('modeForChord', () => {
     const drift = modeForChord(context({ movementPhase: 'drift' }));
     const bloom = modeForChord(context({ movementPhase: 'bloom' }));
     expect(bloom.m).toBeGreaterThan(drift.m);
+  });
+});
+
+describe('plateAspectFor', () => {
+  it('is square when the window is', () => {
+    expect(plateAspectFor(1)).toBeCloseTo(1, 12);
+  });
+
+  it('leans towards the window without ever reaching it', () => {
+    for (const windowAspect of [1.2, 1.6, 1.78]) {
+      const plate = plateAspectFor(windowAspect);
+      expect(plate).toBeGreaterThan(1);
+      expect(plate).toBeLessThan(windowAspect);
+    }
+  });
+
+  it('stops leaning at all, rather than following an ultrawide window', () => {
+    // The figure has to stay a figure. Past the cap the plate holds its
+    // shape and the field frames it, which is a plate on a bench.
+    const wide = plateAspectFor(2.4);
+    const wider = plateAspectFor(6);
+    expect(wider).toBeCloseTo(wide, 12);
+    expect(wide).toBeLessThan(1.4);
+  });
+
+  it('treats a tall window exactly as it treats a wide one', () => {
+    for (const windowAspect of [1.3, 1.9, 3.2]) {
+      expect(plateAspectFor(1 / windowAspect)).toBeCloseTo(1 / plateAspectFor(windowAspect), 12);
+    }
+  });
+
+  it('survives a zero-height window rather than returning a NaN plate', () => {
+    expect(Number.isFinite(plateAspectFor(0))).toBe(true);
+    expect(Number.isFinite(plateAspectFor(Number.POSITIVE_INFINITY))).toBe(true);
+  });
+});
+
+describe('modeAspectFor', () => {
+  it('spends part of the plate’s shape on cells and part on stretch', () => {
+    const plate = 1.34;
+    const modes = modeAspectFor(plate);
+    expect(modes).toBeGreaterThan(1);
+    expect(modes).toBeLessThan(plate);
+    // Whatever the modes do not absorb arrives as stretch, and both halves
+    // have to stay small enough not to be read as a distortion.
+    expect(plate / modes).toBeLessThan(1.2);
+    expect(modes).toBeLessThan(1.2);
+  });
+
+  it('leaves a square plate alone', () => {
+    expect(modeAspectFor(1)).toBeCloseTo(1, 12);
   });
 });
