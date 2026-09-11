@@ -201,7 +201,7 @@ export class Conductor {
         // drums added; the records this is reading from start on the drums
         // and let everything else arrive over them. The open kit still waits
         // for the gather, where it belongs.
-        if (ctx.pulseProfile === 'kit') this.activateVoice('pulseKit', ctx);
+        if (ctx.pulseProfile === 'kit') this.activateOrRevive('pulseKit', ctx);
       } else {
         this.voices.find((v) => v.id === 'vinylCrackle')?.exit();
       }
@@ -554,7 +554,13 @@ export class Conductor {
         this.fadeGroup('shimmer');
         this.fadeGroup('flurry');
         this.fadeGroup('clips');
-        this.fadeGroup('pulse');
+        // A night piece plays its 2-step out to the end of the movement, and
+        // the movement change is what stops it — or doesn't, if the next
+        // piece is another night one. Letting it go here instead cost the
+        // groove the exhale *and* the opening of whatever followed, since a
+        // beat that has just been asked to fade cannot simply be asked back.
+        if (ctx.character === 'night') this.fadeStalePulse(ctx);
+        else this.fadeGroup('pulse');
         // Safety net when dissolve was skipped over; exit is idempotent.
         this.voices.find((v) => v.id === 'deepPressure')?.exit();
         this.fx.triggerExhaleVacuum();
@@ -669,6 +675,21 @@ export class Conductor {
     } else if (ctx.pulseProfile === 'felt') {
       this.activateVoice('rhythmicPulse', ctx);
     }
+  }
+
+  /**
+   * Start a voice, or catch it on its way out.
+   *
+   * Only the beat uses this, and only on a night piece, where the groove is
+   * asked for again within a second or two of being let go — at the end of
+   * one piece and the start of the next. Plain `activateVoice` would skip
+   * it (a fading voice still reads as active) and the 2-step would go
+   * missing for the opening of a piece that is made of it.
+   */
+  private activateOrRevive(id: string, ctx: HarmonicContext): void {
+    const voice = this.voices.find((v) => v.id === id);
+    if (voice?.revive()) return;
+    this.activateVoice(id, ctx);
   }
 
   private activateVoice(id: string, ctx: HarmonicContext): void {
@@ -829,10 +850,17 @@ export class Conductor {
    * Clear the outgoing movement's layers and start the next one. `seed`
    * carries the neighbouring room's key on a doorway crossing.
    *
-   * The pulse fades here and not only on the next phase change: the
-   * incoming movement draws its own pulse profile, and a kit left running
-   * would play over the opening of a piece that is meant to have no beat
-   * at all.
+   * The pulse is dealt with *after* the skip, not before it: the incoming
+   * movement draws its own profile, and what should happen to the outgoing
+   * beat depends on what the incoming one wants. A kit left running would
+   * play over the opening of a piece meant to have no beat at all — but a
+   * night piece following a night piece should carry its groove across the
+   * threshold rather than stop dead and start again two minutes later,
+   * exactly as the surface noise already does.
+   *
+   * It also cannot be fade-then-restart: `activateVoice` skips a voice that
+   * is still fading out, and forcing `enter()` on one would build a second
+   * set of drums over the first, with the old loop still running.
    */
   private beginNextMovement(seed?: HarmonicSeed): void {
     this.cancelClipTimeout();
@@ -840,8 +868,15 @@ export class Conductor {
     this.fadeGroup('air');
     this.fadeGroup('flurry');
     this.fadeGroup('clips');
-    this.fadeGroup('pulse');
     this.harmonicField.skipToNextMovement(this.knobs, seed);
+
+    const next = this.getHarmonicContext();
+    if (next.character === 'night' && next.pulseProfile === 'kit') {
+      this.fadeStalePulse(next);
+      this.activateOrRevive('pulseKit', next);
+    } else {
+      this.fadeGroup('pulse');
+    }
     this.lastPhase = 'drift';
     this.pendingMovementSkip = false;
     this.dissolveBridgeT = 0;

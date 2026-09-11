@@ -60,6 +60,7 @@ export class PlayPanel {
   private readonly tuningButtons = new Map<PlayTuning, HTMLButtonElement>();
   private readonly blendButtons = new Map<PlayBlendId, HTMLButtonElement>();
   private readonly octaveValue: HTMLElement;
+  private octaveRow!: HTMLElement;
   private readonly keyElements = new Map<number, HTMLElement>();
   private readonly learnButtons = new Map<string, HTMLButtonElement>();
   private state: PlayPanelState;
@@ -306,6 +307,10 @@ export class PlayPanel {
     }
     this.presetRows.hidden = beat;
     this.tuningRow.hidden = beat;
+    // The octave stepper transposes the melodic mapping; a drum is not
+    // transposed, it is a different drum, so in Beat the row would be a
+    // control that answers nothing.
+    this.octaveRow.hidden = beat;
     this.kitLegend.hidden = !beat;
     this.element.classList.toggle('is-beat', beat);
     // The on-screen keys say what they do in each mode: a pitch when they
@@ -407,6 +412,7 @@ export class PlayPanel {
 
     this.octaveValue.className = 'play-octave-value';
     row.append(down, this.octaveValue, up);
+    this.octaveRow = row;
     return row;
   }
 
