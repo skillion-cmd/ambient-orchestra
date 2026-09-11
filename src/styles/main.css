@@ -19,12 +19,20 @@ html,
 body {
   width: 100%;
   height: 100%;
+  /* The dynamic unit, so a phone's collapsing address bar doesn't leave the
+     docked controls sitting under it or floating above a gap. */
+  height: 100dvh;
   overflow: hidden;
+  /* A drag that starts on a knob and runs past the end of the rail must not
+     rubber-band the page behind it. */
+  overscroll-behavior: none;
   background: var(--ao-bg);
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   color: var(--ao-text);
   user-select: none;
   -webkit-font-smoothing: antialiased;
+  /* iOS blows up 9px type on rotation without this. */
+  -webkit-text-size-adjust: 100%;
 }
 
 #visualizer {
@@ -33,6 +41,83 @@ body {
   inset: 0;
   width: 100%;
   height: 100%;
+}
+
+/* ———————————————————————————————————————————————————————————————
+   One rule, everywhere: if it has a box around it, you can touch it.
+
+   The rails carry two kinds of thing that used to look identical at 9px —
+   numbers the engine is reporting, and controls that change it. Every
+   control in the app now shares the same chrome: a 1px box, full-contrast
+   ink, a press state, and a focus ring. Every readout has no box, muted
+   ink, and — where it is a canvas — no pointer events at all, so testing it
+   with a thumb is not even possible. The rail section headers say which
+   band you are in, in words.
+   ——————————————————————————————————————————————————————————————— */
+
+.theme-toggle,
+.mode-toggle button,
+.dock-tabs button,
+.dock-collapse,
+.piece-picker-btn,
+.readout-action,
+.play-panel button {
+  font-family: inherit;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid color-mix(in srgb, var(--ao-text) 26%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ao-text) 3%, transparent);
+  color: var(--ao-text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.theme-toggle:hover:not(:disabled),
+.mode-toggle button:hover:not(:disabled),
+.dock-tabs button:hover:not(:disabled),
+.dock-collapse:hover:not(:disabled),
+.piece-picker-btn:hover:not(:disabled),
+.readout-action:hover:not(:disabled),
+.play-panel button:hover:not(:disabled) {
+  color: var(--ao-text);
+  border-color: color-mix(in srgb, var(--ao-text) 46%, transparent);
+  background: color-mix(in srgb, var(--ao-text) 8%, transparent);
+}
+
+.theme-toggle:active:not(:disabled),
+.mode-toggle button:active:not(:disabled),
+.dock-tabs button:active:not(:disabled),
+.dock-collapse:active:not(:disabled),
+.piece-picker-btn:active:not(:disabled),
+.readout-action:active:not(:disabled),
+.play-panel button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--ao-text) 18%, transparent);
+}
+
+.theme-toggle.is-active,
+.mode-toggle button.is-active,
+.dock-tabs button.is-active,
+.piece-picker-btn.is-active,
+.play-panel button.is-active {
+  color: var(--ao-text);
+  border-color: color-mix(in srgb, var(--ao-text) 55%, transparent);
+  background: color-mix(in srgb, var(--ao-text) 12%, transparent);
+}
+
+.theme-toggle:disabled,
+.mode-toggle button:disabled,
+.piece-picker-btn:disabled,
+.readout-action:disabled,
+.play-panel button:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+:where(button, .knob-dial):focus-visible {
+  outline: 1px solid var(--ao-text);
+  outline-offset: 2px;
 }
 
 .cymatics-overlay {
@@ -51,52 +136,43 @@ body {
   gap: 12px;
 }
 
+/* Infographics, both of them: drawn every frame, and inert. */
+.scope-canvas {
+  display: block;
+  max-width: 100%;
+  pointer-events: none;
+}
+
 /* The two view switches sit together at the top centre, mirroring the
    Drift/Calibrate/Play switch at the bottom: what you are looking at above,
-   what the engine is doing below. Outside the rails, so both stay reachable
-   while Drift hides them. */
+   what the engine is doing below. Outside the dock, so both stay reachable
+   while Drift hides everything else. */
 .view-toggle-slot {
   position: fixed;
-  top: 18px;
+  top: max(18px, env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
   z-index: 15;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
   align-items: center;
+  max-width: calc(100vw - 24px);
 }
 
 .view-toggle-slot[hidden] {
   display: none;
 }
 
-.view-toggle-slot .theme-toggle {
+.theme-toggle {
   padding: 5px 12px;
   backdrop-filter: blur(4px);
 }
 
-.theme-toggle {
-  font-family: inherit;
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 5px 10px;
-  border: 1px solid color-mix(in srgb, var(--ao-text) 30%, transparent);
-  border-radius: 2px;
-  background: transparent;
-  color: var(--ao-text);
-  cursor: pointer;
-  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-}
-
-.theme-toggle:hover {
-  border-color: var(--ao-text);
-  background: color-mix(in srgb, var(--ao-text) 8%, transparent);
-}
-
 .mode-toggle-slot {
   position: fixed;
-  bottom: 18px;
+  bottom: max(18px, env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
   z-index: 15;
@@ -108,36 +184,15 @@ body {
 
 .mode-toggle {
   display: flex;
-  border: 1px solid color-mix(in srgb, var(--ao-text) 30%, transparent);
-  border-radius: 2px;
-  overflow: hidden;
+  gap: 4px;
   backdrop-filter: blur(4px);
 }
 
 .mode-toggle button {
-  font-family: inherit;
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 5px 12px;
-  border: none;
-  background: transparent;
-  color: var(--ao-text-faint);
-  cursor: pointer;
-  transition: color 0.2s ease, background 0.2s ease;
+  padding: 6px 14px;
 }
 
-.mode-toggle button:hover {
-  color: var(--ao-text);
-  background: color-mix(in srgb, var(--ao-text) 8%, transparent);
-}
-
-.mode-toggle button.is-active {
-  color: var(--ao-text);
-  background: color-mix(in srgb, var(--ao-text) 14%, transparent);
-}
-
-/* Drift is hands-off: the control rails disappear, only the toggle stays. */
+/* Drift is hands-off: the control rails disappear, only the switches stay. */
 body[data-mode='drift'] .rail {
   display: none;
 }
@@ -153,6 +208,21 @@ body[data-mode='drift'] .rail {
   color: var(--ao-text-faint);
   pointer-events: none;
   font-variant-numeric: tabular-nums;
+}
+
+/* ——— The dock ———
+
+   On a wide screen this element generates no box: `display: contents` leaves
+   the rails, the play stage and the mode switch fixed to their own edges,
+   exactly as they were. Narrow enough that two rails and a field cannot
+   stand side by side, the dock becomes a real bottom sheet and they become
+   its children. See the compact media query at the foot of this file. */
+.dock {
+  display: contents;
+}
+
+.dock-bar {
+  display: none;
 }
 
 /* ——— Side rails ——— */
@@ -233,6 +303,84 @@ body[data-mode='drift'] .rail {
   flex: 0 0 auto;
 }
 
+/* ——— Readout / controls bands ——— */
+
+.rail-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.rail-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rail-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.rail-section-title {
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ao-text);
+}
+
+.rail-section-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ao-text-faint);
+}
+
+/* The controls band is separated by a rule, so the eye finds the boundary
+   before it reads either header. */
+.rail-section--controls {
+  border-top: 1px solid var(--ao-border);
+  padding-top: 14px;
+}
+
+/* Nothing under a readout header is pressable, and the cursor says so before
+   the click does. */
+.rail-section--readout .rail-section-body {
+  cursor: default;
+}
+
+.live-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ao-text-muted);
+  animation: live-pulse 2.6s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* ——— Knobs ——— */
+
 .knob-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -265,36 +413,66 @@ body[data-mode='drift'] .rail {
 }
 
 .knob-dial {
-  width: 36px;
-  height: 36px;
+  --dial: 36px;
+  position: relative;
+  width: var(--dial);
+  height: var(--dial);
   border-radius: 50%;
   border: 1px solid color-mix(in srgb, var(--ao-text) 28%, transparent);
-  position: relative;
+  background: color-mix(in srgb, var(--ao-text) 4%, transparent);
   cursor: ns-resize;
-  transition: border-color 0.15s ease;
+  /* The browser must not read a vertical drag on a dial as a scroll of the
+     panel underneath it — on a phone that was the whole gesture. */
+  touch-action: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.knob-dial:hover {
-  border-color: color-mix(in srgb, var(--ao-text) 50%, transparent);
+.knob-dial:hover,
+.knob-dial.is-dragging {
+  border-color: color-mix(in srgb, var(--ao-text) 55%, transparent);
+  background: color-mix(in srgb, var(--ao-text) 10%, transparent);
 }
 
-.knob-dial::after {
-  content: '';
+/* The filled arc: the value, drawn on the control, so a dial reads as
+   something set to a position rather than as a decorative ring. 270° of
+   sweep starting at seven o'clock, masked back to a ring. */
+.knob-arc {
+  position: absolute;
+  inset: -1px;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0.85;
+  background: conic-gradient(
+    from 225deg,
+    var(--ao-text) 0turn calc(var(--knob-turn, 0) * 0.75turn),
+    transparent calc(var(--knob-turn, 0) * 0.75turn) 1turn
+  );
+  /* `closest-side` matters: the default farthest-corner puts 100% of the
+     gradient out at the corner of the box, which leaves the ring a sub-pixel
+     sliver hiding under the dial's own border. */
+  -webkit-mask: radial-gradient(circle closest-side, transparent 78%, #000 82%);
+  mask: radial-gradient(circle closest-side, transparent 78%, #000 82%);
+}
+
+.knob-pointer {
   position: absolute;
   top: 4px;
   left: 50%;
-  width: 1.5px;
-  height: 9px;
-  margin-left: -0.75px;
+  width: 2px;
+  height: calc(var(--dial) * 0.26);
+  margin-left: -1px;
   background: var(--ao-text);
   border-radius: 1px;
-  transform-origin: 50% 14px;
+  pointer-events: none;
+  transform-origin: 50% calc(var(--dial) / 2 - 4px);
+  transform: rotate(calc(-135deg + var(--knob-turn, 0) * 270deg));
 }
 
 .knob-value {
   font-size: 9px;
   color: var(--ao-text-faint);
   letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
 }
 
 .knob-range {
@@ -332,7 +510,9 @@ body[data-mode='drift'] .rail {
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  padding: 0;
+  /* A full-screen overlay with a word in the middle of it: the word is the
+     target on a desktop, and the padding is what a thumb finds. */
+  padding: 18px 26px;
   border: none;
   background: none;
   color: color-mix(in srgb, var(--ao-text) 62%, transparent);
@@ -344,7 +524,7 @@ body[data-mode='drift'] .rail {
   color: var(--ao-text);
 }
 
-/* ——— Session readout (ambient + vision) ——— */
+/* ——— Session readout (audio + vision) ——— */
 
 .session-readout {
   width: 100%;
@@ -366,30 +546,28 @@ body[data-mode='drift'] .rail {
   color: var(--ao-text-muted);
 }
 
-.readout-action {
+/* What used to be a button wearing a label's clothes. Now it is the label it
+   always looked like, and the buttons live in the controls band. */
+.readout-value {
   flex: 0 1 auto;
-  font-family: inherit;
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.02em;
-  padding: 0;
-  border: none;
-  background: none;
   color: var(--ao-text);
-  cursor: pointer;
-  text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.readout-action:hover:not(:disabled) {
-  opacity: 0.55;
+.readout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
-.readout-action:disabled {
-  opacity: 0.35;
-  cursor: default;
+.readout-action {
+  flex: 1 1 auto;
+  padding: 5px 6px;
 }
 
 .readout-track {
@@ -430,12 +608,6 @@ body[data-mode='drift'] .rail {
   white-space: nowrap;
 }
 
-.readout-rule {
-  height: 1px;
-  background: color-mix(in srgb, var(--ao-text) 12%, transparent);
-  margin: 10px 0;
-}
-
 .readout-sub {
   margin-top: 8px;
   font-size: 9px;
@@ -443,25 +615,6 @@ body[data-mode='drift'] .rail {
   text-transform: uppercase;
   color: var(--ao-text-muted);
   min-height: 11px;
-}
-
-@media (max-width: 720px) {
-  .rail {
-    width: 218px;
-    padding: 18px 16px 20px;
-  }
-
-  .knob-grid {
-    gap: 16px 10px;
-  }
-
-  .knob-grid--three {
-    gap: 14px 4px;
-  }
-
-  .knob-grid--three .knob {
-    width: 58px;
-  }
 }
 
 .error-overlay {
@@ -497,9 +650,6 @@ body[data-mode='play'] .piece-picker {
 }
 
 .piece-picker {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--ao-border);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -521,40 +671,16 @@ body[data-mode='play'] .piece-picker {
 .piece-picker-btn {
   flex: 1 1 auto;
   min-width: 34px;
-  padding: 3px 5px;
-  font: inherit;
-  font-size: 9px;
+  padding: 5px 5px;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ao-text-muted);
-  background: transparent;
-  border: 1px solid var(--ao-border);
-  cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease;
-}
-
-.piece-picker-btn:hover:not(:disabled) {
-  color: var(--ao-text);
-  border-color: color-mix(in srgb, var(--ao-text) 32%, transparent);
-}
-
-.piece-picker-btn.is-active {
-  color: var(--ao-text);
-  border-color: color-mix(in srgb, var(--ao-text) 45%, transparent);
-}
-
-.piece-picker-btn:disabled {
-  opacity: 0.3;
-  cursor: default;
 }
 
 .piece-picker-play {
   flex: 0 0 auto;
-  min-width: 46px;
+  min-width: 52px;
   color: var(--ao-text);
   border-color: color-mix(in srgb, var(--ao-text) 45%, transparent);
 }
-
 
 /* ——— Play stage (Play only) ——— */
 /* The instrument stands in the middle of the screen, above the mode switch
@@ -577,7 +703,7 @@ body[data-mode='calibrate'] .play-stage {
   /* Wide enough for a keyboard you can actually hit, and never so wide it
      reaches under a rail: the rails are 268px each. */
   width: clamp(300px, calc(100vw - 596px), 760px);
-  max-height: calc(100vh - 130px);
+  max-height: calc(100dvh - 130px);
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--ao-text) 22%, transparent) transparent;
@@ -605,6 +731,7 @@ body[data-mode='calibrate'] .play-stage {
   display: flex;
   align-items: baseline;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .play-head .play-device {
@@ -642,6 +769,7 @@ body[data-mode='calibrate'] .play-stage {
 .play-settings {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .play-settings .play-blend {
@@ -721,26 +849,8 @@ body[data-mode='calibrate'] .play-stage {
 }
 
 .play-panel button {
-  font: inherit;
-  font-size: 9px;
+  padding: 5px 5px;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ao-text-muted);
-  background: transparent;
-  border: 1px solid var(--ao-border);
-  padding: 3px 5px;
-  cursor: pointer;
-  transition: color 120ms ease, border-color 120ms ease;
-}
-
-.play-panel button:hover {
-  color: var(--ao-text);
-  border-color: color-mix(in srgb, var(--ao-text) 32%, transparent);
-}
-
-.play-panel button.is-active {
-  color: var(--ao-text);
-  border-color: color-mix(in srgb, var(--ao-text) 45%, transparent);
 }
 
 .play-connect {
@@ -795,7 +905,7 @@ body[data-mode='calibrate'] .play-stage {
 }
 
 .play-octave button {
-  flex: 0 0 26px;
+  flex: 0 0 30px;
 }
 
 .play-octave-value {
@@ -807,10 +917,12 @@ body[data-mode='calibrate'] .play-stage {
   color: var(--ao-text-muted);
 }
 
-/* Two octaves of clickable keys, so Play works with nothing plugged in.
-   White keys share the row; black keys are absolutely positioned over the
-   boundaries between them, so neither can push the other out of true. */
+/* Two octaves of clickable keys — one on a phone — so Play works with
+   nothing plugged in. White keys share the row; black keys are absolutely
+   positioned over the boundaries between them, so neither can push the
+   other out of true. */
 .play-keyboard {
+  --black-key-width: 3.4%;
   position: relative;
   height: 104px;
   user-select: none;
@@ -838,6 +950,7 @@ body[data-mode='calibrate'] .play-stage {
   text-transform: uppercase;
   color: var(--ao-text-muted);
   border: 1px solid var(--ao-border);
+  border-radius: 0;
   background: color-mix(in srgb, var(--ao-text) 4%, transparent);
   cursor: pointer;
   transition: background 90ms ease;
@@ -848,7 +961,7 @@ body[data-mode='calibrate'] .play-stage {
   top: 0;
   /* A share of the keyboard rather than a fixed width — about half a white
      key, as on a real one, at whatever width the stage ends up. */
-  width: 3.4%;
+  width: var(--black-key-width);
   height: 62%;
   /* `left` is the boundary itself; pull back by half to straddle it. */
   transform: translateX(-50%);
@@ -875,7 +988,7 @@ body[data-mode='calibrate'] .play-stage {
   cursor: pointer;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  padding: 2px 0;
+  padding: 4px 0;
 }
 
 .play-learn-note {
@@ -901,6 +1014,266 @@ body[data-mode='calibrate'] .play-stage {
 }
 
 @keyframes play-learn-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.45; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ——— A finger, at any width ———
+
+   Independent of the layout: a touchscreen laptop needs the bigger targets
+   and keeps the rails, and a narrow desktop window needs the dock and keeps
+   its mouse. */
+@media (pointer: coarse) {
+  .knob-dial {
+    --dial: 46px;
+  }
+
+  .theme-toggle,
+  .mode-toggle button,
+  .dock-tabs button,
+  .dock-collapse,
+  .piece-picker-btn,
+  .readout-action,
+  .play-panel button:not(.play-key-cap) {
+    min-height: 34px;
+    padding-block: 8px;
+  }
+
+  .play-octave button {
+    flex: 0 0 44px;
+  }
+
+  .play-learn summary {
+    padding: 10px 0;
+  }
+}
+
+/* ——— The phone layout ———
+
+   Two 268px rails plus a field worth looking at between them need more width
+   than this, so below it the rails stop being rails: the mode switch, a tab
+   bar and one panel at a time become a single sheet docked to the bottom
+   edge, with the whole field visible above it. Nothing moves in the DOM —
+   the dock stops being `display: contents` and its children stop being
+   fixed. */
+@media (max-width: 820px) {
+  .dock {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 16;
+    gap: 8px;
+    /* Never more than two thirds of the screen: the field is the point, and
+       a sheet that eats it is a settings page with a wallpaper. */
+    max-height: min(66dvh, 560px);
+    padding: 10px 14px max(12px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--ao-border);
+    background: color-mix(in srgb, var(--ao-overlay) 96%, transparent);
+    backdrop-filter: blur(10px);
+  }
+
+  .mode-toggle-slot {
+    position: static;
+    transform: none;
+    flex: 0 0 auto;
+  }
+
+  .mode-toggle button {
+    flex: 1 1 0;
+    padding: 9px 4px;
+    font-size: 10px;
+  }
+
+  .dock-bar {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    flex: 0 0 auto;
+  }
+
+  /* Drift has nothing to tab between, so the bar goes rather than standing
+     there empty — the same decision the rails make. */
+  .dock-bar.is-empty,
+  .dock-bar[hidden] {
+    display: none;
+  }
+
+  .dock-tabs {
+    display: flex;
+    flex: 1 1 auto;
+    gap: 6px;
+  }
+
+  .dock-tabs button {
+    flex: 1 1 0;
+    padding: 8px 4px;
+  }
+
+  .dock-collapse {
+    flex: 0 0 auto;
+    padding: 8px 12px;
+  }
+
+  /* The rails become panels: full width, no gradient edge, and each one
+     scrolls on its own inside the sheet. */
+  .rail,
+  .play-stage {
+    position: static;
+    transform: none;
+    width: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0;
+    gap: 14px;
+    background: none;
+    border: none;
+    border-radius: 0;
+    backdrop-filter: none;
+    max-height: none;
+    pointer-events: auto;
+  }
+
+  /* The tab already names the panel. */
+  .rail-head {
+    display: none;
+  }
+
+  /* The rail itself is the scroller now, so the data block stops being one:
+     it takes the height its content asks for. Left shrinkable with
+     `overflow: visible` it would be squeezed under its own contents and the
+     cymatics panel would paint straight over the knobs below it. */
+  .rail-data {
+    flex: 0 0 auto;
+    min-height: auto;
+    overflow: visible;
+    gap: 14px;
+  }
+
+  /* Controls first in the sheet, readout under them. On a wide screen the
+     rail is tall enough to show both at once and the readout reads best at
+     the top; in a sheet you can only see one at a time, and what you opened
+     Calibrate for is the knobs — not the graph of what they did. */
+  .rail-knobs {
+    order: 1;
+    margin-top: 0;
+  }
+
+  .rail-data {
+    order: 2;
+  }
+
+  /* The divider follows the order. */
+  .rail-section--controls {
+    border-top: none;
+    padding-top: 0;
+  }
+
+  .rail-section--readout {
+    border-top: 1px solid var(--ao-border);
+    padding-top: 14px;
+  }
+
+  /* Six visual knobs read better as two rows of three than three of two at
+     this width, and the audio grid's nine already are. */
+  .knob-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px 8px;
+  }
+
+  .knob,
+  .knob-grid--three .knob {
+    width: auto;
+    max-width: 92px;
+  }
+
+  /* One panel at a time — whichever the tabs chose. */
+  body[data-panel='visual'] .rail-left,
+  body[data-panel='audio'] .rail-right,
+  body[data-panel='play'] .rail-left,
+  body[data-panel='play'] .rail-right,
+  body[data-panel='audio'] .play-stage,
+  body[data-panel='visual'] .play-stage {
+    display: none;
+  }
+
+  /* Collapsed: the mode switch and the tab bar stay, so getting back is one
+     tap, and the field has the whole screen. */
+  body[data-dock='collapsed'] .rail,
+  body[data-dock='collapsed'] .play-stage {
+    display: none;
+  }
+
+  .play-stage {
+    /* The stage's own chrome belonged to a floating card; the sheet has it
+       now. */
+    padding: 0;
+  }
+
+  /* Web MIDI barely exists on a phone, and the learn grid is eight cells
+     across — unusable at this width, and nothing is lost by folding it away
+     until there is room for it. */
+  .play-learn {
+    display: none;
+  }
+
+  /* The instrument stays put while its settings scroll behind it: the panel
+     above the keys is taller than the sheet, and a keyboard you have to
+     scroll back to is not an instrument. */
+  .play-keyboard {
+    position: sticky;
+    bottom: 0;
+    height: 116px;
+    padding-top: 6px;
+    /* Opaque, and no second backdrop filter on a strip that moves with every
+       scroll frame: the settings pass *behind* the keys as the panel scrolls,
+       and a translucent plate showed the Behind/With/Front row straight
+       through the naturals. */
+    background: var(--ao-bg);
+  }
+
+  /* An absolutely positioned child measures from the padding box, so without
+     this the sharps float 6px above the whites they straddle. */
+  .play-keyboard .play-key-cap.is-black {
+    top: 6px;
+  }
+
+  .play-settings .play-octave {
+    flex: 1 1 140px;
+  }
+
+  .view-toggle-slot {
+    gap: 6px;
+  }
+
+  /* Bottom-right is the sheet now. */
+  .perf-monitor {
+    bottom: auto;
+    right: auto;
+    top: max(8px, env(safe-area-inset-top));
+    left: 12px;
+  }
+}
+
+/* A landscape phone has width to spare and almost no height, so the sheet
+   takes what it needs from the width instead. */
+@media (max-width: 820px) and (max-height: 520px) {
+  .dock {
+    max-height: 78dvh;
+    padding-top: 6px;
+    gap: 6px;
+  }
+
+  .play-keyboard {
+    height: 84px;
+  }
 }

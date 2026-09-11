@@ -35,6 +35,17 @@ export interface PlayPanelHandlers {
 /** Two octaves from middle C — the span the computer keyboard covers. */
 const KEYBOARD_LOW = 60;
 const KEYBOARD_HIGH = 84;
+/**
+ * One octave on a phone.
+ *
+ * Two octaves is fifteen white keys, which on a 390px screen is 24px each —
+ * narrower than the finger aiming at them, so every chord is a gamble. One
+ * octave is eight keys at about 44px, which is the width a thumb actually
+ * hits, and the octave stepper right above already covers the rest of the
+ * range. The computer keybed and any MIDI controller keep their full span
+ * either way: this is what is *drawn*, not what can be played.
+ */
+const COMPACT_KEYBOARD_HIGH = 72;
 
 /**
  * The left-rail panel for Play mode.
@@ -61,6 +72,8 @@ export class PlayPanel {
   private readonly blendButtons = new Map<PlayBlendId, HTMLButtonElement>();
   private readonly octaveValue: HTMLElement;
   private octaveRow!: HTMLElement;
+  private keyboard!: HTMLElement;
+  private compact = false;
   private readonly keyElements = new Map<number, HTMLElement>();
   private readonly learnButtons = new Map<string, HTMLButtonElement>();
   private state: PlayPanelState;
@@ -144,6 +157,26 @@ export class PlayPanel {
 
   getState(): PlayPanelState {
     return { ...this.state };
+  }
+
+  /**
+   * Redraw the keys for a phone-width stage, or back again.
+   *
+   * A rebuild rather than hiding the upper octave with CSS: the black keys
+   * are positioned as a percentage of however many white keys are in the row,
+   * so dropping seven whites out of the flex line would leave every sharp
+   * sitting over the wrong boundary.
+   */
+  setCompact(compact: boolean): void {
+    if (compact === this.compact) return;
+    this.compact = compact;
+    // `buildKeyboard` claims `this.keyboard` for the new row, so the old one
+    // has to be held onto before the call to have something to swap out.
+    const previous = this.keyboard;
+    previous.replaceWith(this.buildKeyboard());
+    // The caps carry their kit labels in Beat mode, and the fresh ones do not
+    // have them yet.
+    this.syncVoiceMode();
   }
 
   setStatus(status: MidiStatus, deviceName: string | null): void {
@@ -463,14 +496,19 @@ export class PlayPanel {
     whites.className = 'play-keyboard-whites';
     keyboard.appendChild(whites);
 
+    const high = this.compact ? COMPACT_KEYBOARD_HIGH : KEYBOARD_HIGH;
     let whiteCount = 0;
-    for (let note = KEYBOARD_LOW; note <= KEYBOARD_HIGH; note++) {
+    for (let note = KEYBOARD_LOW; note <= high; note++) {
       if (!isBlackKey(note)) whiteCount++;
     }
     const whiteWidth = 100 / whiteCount;
+    // A black key is about half a white one on a real keyboard, and the row
+    // is a different number of whites wide in each layout.
+    keyboard.style.setProperty('--black-key-width', `${whiteWidth * 0.56}%`);
 
+    this.keyElements.clear();
     let placed = 0;
-    for (let note = KEYBOARD_LOW; note <= KEYBOARD_HIGH; note++) {
+    for (let note = KEYBOARD_LOW; note <= high; note++) {
       const black = isBlackKey(note);
       const key = document.createElement('button');
       key.type = 'button';
@@ -489,6 +527,7 @@ export class PlayPanel {
       this.bindKey(key, note);
       this.keyElements.set(note, key);
     }
+    this.keyboard = keyboard;
     return keyboard;
   }
 

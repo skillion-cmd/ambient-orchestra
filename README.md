@@ -166,10 +166,69 @@ Two edge rails frame an open center, each pairing live data with the knobs that 
 - **Top centre — what you are looking at:** the Ink / Currents / Resonance switch and the light / dark field toggle, mirroring Drift / Calibrate / Play at the bottom. Outside the rails, so both stay reachable in Drift
 - **10 knobs** — six sound, four vision (see below)
 - **Piece picker (Calibrate only)** — choose a length and a world and play that piece now, instead of waiting for two weighted draws to agree. Drift keeps its unpredictability; direct control belongs to Calibrate
-- **Play stage (Play only)** — the instrument stands in the middle of the screen, above the mode switch and clear of both rails: Melody / Beat, connected controller, eight voices (or the black-key kit legend), the in-key / chromatic toggle, octave, blend, the field's live key, what is sounding in full size, and a two-octave keyboard wide enough to hit. The rails keep what they are for — the engine, and the knobs that steer it
+- **Play stage (Play only)** — the instrument stands in the middle of the screen, above the mode switch and clear of both rails: Melody / Beat, connected controller, eight voices (or the black-key kit legend), the in-key / chromatic toggle, octave, blend, the field's live key, what is sounding in full size, and a keyboard wide enough to hit. The rails keep what they are for — the engine, and the knobs that steer it
 - **Knob automator** — slow, phrase-aligned autonomous drift when you leave the controls alone
 - **PerfMonitor** — a dev-only health gate (press **D**) reporting frame rate, audio-context health, console errors, and heap growth
 - **Error overlay** — a clear message if WebGL or audio fails to start
+
+### Readout or control: one rule
+
+Each rail is two named bands, because it was carrying two completely
+different kinds of thing in the same 9px type and there was no way to tell
+them apart except by clicking:
+
+- **Readout · live** — what the engine is doing. No box anywhere in it, muted
+  ink, and the two canvases have pointer events off entirely, so a thumb
+  cannot even test them. A dot next to the header breathes, which is the one
+  animated thing in the rail and says "this is arriving on its own" faster
+  than a word can.
+- **Controls · tap · drag** — what changes it. Everything in the band has a
+  1px box, full-contrast ink, a press state and a focus ring.
+
+**If it has a box around it, you can touch it.** That rule now holds across
+the whole interface — the mode and view switches, the piece picker, the play
+panel, and the two rails.
+
+Two things moved to make it true. The phase name in the movement row *was* a
+button dressed as a label, and shift-clicking it skipped the movement — a
+control that looked like text, plus one that was invisible and impossible to
+reach from a phone, which has no shift key. Both are now ordinary buttons in
+the controls band: **Next phase** and **Next movement**, with **Next form**
+opposite them in the visual rail. The knob dials grew a filled arc, so a dial
+shows its value on itself and reads as something set to a position rather
+than as a ring drawn for decoration.
+
+### On a phone
+
+Below 820px — a phone, or a narrow desktop window — two 268px rails and a
+field worth looking at cannot stand side by side, so the rails stop being
+rails. The mode switch, a tab bar and one panel at a time become a single
+sheet docked to the bottom edge, capped at two thirds of the screen so the
+field keeps the rest. Nothing moves in the DOM: the wrapper is
+`display: contents` on a wide screen and a flex column below the breakpoint.
+
+- **Tabs** follow the mode — Audio / Visual in Calibrate, with Play added and
+  selected first in Play mode. Drift has no tabs, because Drift has no
+  controls on any screen size
+- **Hide** collapses the sheet to just the mode switch and the tabs, so the
+  field has the whole screen and getting back is one tap. It is what a
+  double-click does on a wide screen
+- **Controls come first in the sheet**, readout under them: you can only see
+  one band at a time down there, and what you opened Calibrate for is the
+  knobs, not the graph of what they did
+- **Knobs take a finger** — 46px dials on any touchscreen, pointer-captured
+  so the drag survives sliding off, and `touch-action: none` so a vertical
+  drag turns the knob instead of scrolling the sheet. A second finger can
+  work a knob while the first holds a chord
+- **One octave of keys** in Play instead of two: fifteen white keys on a
+  390px screen is 24px each, which is narrower than the finger aiming at
+  them. Eight keys is about 44px, and the octave stepper covers the rest of
+  the range. The keyboard is sticky to the bottom of the sheet, so its
+  settings scroll behind it rather than taking it off screen. The computer
+  keybed and any MIDI controller keep their full two-octave span either way
+- Both data panels are drawn to the width of the column they are in rather
+  than a fixed 220px, and MIDI learn folds away — eight cells across is
+  unusable at this width, and Web MIDI barely exists on a phone
 
 ## Requirements
 
@@ -246,15 +305,16 @@ MIDI device profiles and learned bindings.
 
 | Input | Action |
 |-------|--------|
-| **Double-click** or **F11** | Hide / show both rails (full-bleed view) |
+| **Double-click** or **F11** | Hide / show both rails (full-bleed view). On a phone, collapse the dock — same as the **Hide** button |
 | **D** | Toggle the PerfMonitor health readout (Drift and Calibrate — in Play, D is a key) |
 | **Ink / Currents / Resonance** | Switch visual (top centre) |
 | **Light field / Dark field** | Toggle visual palette (top centre) |
 | **A**–**;** / **W E T Y U O P** (Play) | Computer keybed — white keys and black keys |
 | **Z** / **X** (Play) | Shift the keybed down / up an octave |
-| **Mov** button | Advance movement phase |
-| **Shift + Mov** | Skip to next movement |
-| **Form** button | Nudge visual morphology emphasis |
+| **Next phase** button | Advance movement phase |
+| **Next movement** button | Dissolve this piece and begin another |
+| **Next form** button | Nudge visual morphology emphasis |
+| **↑ ↓ ← →** on a focused knob | Move it by 2 (hold **shift** for 10); **home** / **end** for either end |
 
 ## MIDI controllers
 

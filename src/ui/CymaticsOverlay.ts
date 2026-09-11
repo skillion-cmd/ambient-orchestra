@@ -1,5 +1,6 @@
 import type { AudioFeatures, HarmonicContext, MovementPhase } from '../audio/types';
 import type { LastTouchedKnob } from './Controls';
+import { ScopeCanvas } from './ScopeCanvas';
 
 /** How long a touched knob's label/value replaces the KEY line. */
 const TOUCH_ECHO_MS = 1500;
@@ -13,7 +14,7 @@ const PHASE_LABELS: Record<MovementPhase, string> = {
   exhale: 'EXHALE',
 };
 
-const W = 220;
+const DEFAULT_W = 220;
 const H = 176;
 const WAVE_H = 72;
 
@@ -37,13 +38,16 @@ interface Palette {
 }
 
 /**
- * Minimal cymatics / sound-vibration readout in the upper-right corner.
- * Two interweaving sine curves driven by the spectrum, beat markers, and a
- * compact phase/band data block — matched to the existing monospace UI.
+ * The audio side's infographic: two interweaving sine curves driven by the
+ * spectrum, beat markers, and a compact phase/band data block.
+ *
+ * Nothing in here is a control. It is drawn on a canvas with pointer events
+ * off, and it lives under the rail's `readout` header, so a thumb never has
+ * to test it to find out.
  */
 export class CymaticsOverlay {
   readonly element: HTMLDivElement;
-  private readonly canvas: HTMLCanvasElement;
+  private readonly canvas: ScopeCanvas;
   private readonly ctx: CanvasRenderingContext2D;
   private palette: Palette;
   private phase = 0;
@@ -53,23 +57,14 @@ export class CymaticsOverlay {
   private mids = 0;
   private highs = 0;
 
-  constructor(parent: HTMLElement) {
+  constructor() {
     this.element = document.createElement('div');
     this.element.className = 'cymatics-overlay';
 
-    this.canvas = document.createElement('canvas');
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.canvas.width = Math.floor(W * dpr);
-    this.canvas.height = Math.floor(H * dpr);
-    this.canvas.style.width = `${W}px`;
-    this.canvas.style.height = `${H}px`;
-    const ctx = this.canvas.getContext('2d');
-    if (!ctx) throw new Error('2D canvas unavailable for cymatics overlay');
-    this.ctx = ctx;
-    this.ctx.scale(dpr, dpr);
-
-    this.element.appendChild(this.canvas);
-    parent.appendChild(this.element);
+    this.canvas = new ScopeCanvas(H, DEFAULT_W);
+    this.ctx = this.canvas.ctx;
+    this.element.appendChild(this.canvas.element);
+    this.canvas.observe(this.element);
     this.palette = this.readPalette();
   }
 
@@ -108,6 +103,7 @@ export class CymaticsOverlay {
 
   private draw(harmonic: HarmonicContext, touch: LastTouchedKnob | null): void {
     const c = this.ctx;
+    const W = this.canvas.width;
     c.clearRect(0, 0, W, H);
 
     const midY = WAVE_H * 0.5;
@@ -186,6 +182,7 @@ export class CymaticsOverlay {
   /** Console-style activity meter — one bar per voice group. */
   private drawEnsemble(top: number, harmonic: HarmonicContext): void {
     const c = this.ctx;
+    const W = this.canvas.width;
     c.fillStyle = this.palette.muted;
     c.textAlign = 'left';
     c.fillText('VOICES', 2, top);
@@ -223,6 +220,7 @@ export class CymaticsOverlay {
     c.strokeStyle = color;
     c.lineWidth = 1;
     c.beginPath();
+    const W = this.canvas.width;
     const TAU = Math.PI * 2;
     for (let x = 0; x <= W; x += 2) {
       const y = midY + Math.sin((x / W) * TAU * cycles + phase) * amp;
@@ -235,6 +233,7 @@ export class CymaticsOverlay {
 
   private drawBands(y: number): void {
     const c = this.ctx;
+    const W = this.canvas.width;
     const labels: Array<[string, number]> = [
       ['BASS', this.bass],
       ['MID', this.mids],
