@@ -51,9 +51,28 @@ body {
   gap: 12px;
 }
 
-#rail-right-toggle {
-  display: inline-flex;
-  gap: 6px;
+/* The two view switches sit together at the top centre, mirroring the
+   Drift/Calibrate/Play switch at the bottom: what you are looking at above,
+   what the engine is doing below. Outside the rails, so both stay reachable
+   while Drift hides them. */
+.view-toggle-slot {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.view-toggle-slot[hidden] {
+  display: none;
+}
+
+.view-toggle-slot .theme-toggle {
+  padding: 5px 12px;
+  backdrop-filter: blur(4px);
 }
 
 .theme-toggle {

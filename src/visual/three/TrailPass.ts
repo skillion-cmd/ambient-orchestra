@@ -110,11 +110,23 @@ export class TrailPass {
     this.fadeMesh.geometry.dispose();
   }
 
+  /**
+   * Half-float, not the default byte target.
+   *
+   * This buffer is fed back into itself every frame — each frame mixes a
+   * little of the background into the last one — and at 8 bits that
+   * convergence stalls: once a pixel is within about four levels of the
+   * background, the fade rounds to zero and the pixel stays where it is,
+   * forever. In the ink field nothing sits still long enough to notice. On
+   * a plate that is mostly empty by design, it left the ghost of whatever
+   * had been on screen before permanently printed into the background.
+   */
   private makeTarget(w: number, h: number): THREE.WebGLRenderTarget {
     return new THREE.WebGLRenderTarget(w, h, {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
       depthBuffer: true,
+      type: THREE.HalfFloatType,
     });
   }
 

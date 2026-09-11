@@ -43,7 +43,7 @@ const leftData = document.getElementById('rail-left-data')!;
 const leftKnobs = document.getElementById('rail-left-knobs')!;
 const rightData = document.getElementById('rail-right-data')!;
 const rightKnobs = document.getElementById('rail-right-knobs')!;
-const rightToggleSlot = document.getElementById('rail-right-toggle')!;
+const viewToggleSlot = document.getElementById('view-toggle')!;
 const modeToggleSlot = document.getElementById('mode-toggle')!;
 const overlay = document.getElementById('overlay')!;
 const errorOverlay = document.getElementById('error-overlay')!;
@@ -161,18 +161,21 @@ leftData.appendChild(playPanel.element);
 const visualScope = new VisualScope(rightData, () => visualizer?.requestNextForm());
 rightKnobs.appendChild(controls.visualElement);
 
+// ——— Top centre: what you are looking at ———
+// Which visual and which field, in the open above the canvas rather than in
+// the right rail — they are the two switches you reach for while watching,
+// and in Drift the rail that used to hold them isn't there.
+const visualModeToggle = new VisualModeToggle(loadStoredVisualMode(), (visualMode) => {
+  visualizer?.setVisualMode(visualMode);
+});
+
 const themeToggle = new ThemeToggle(initialTheme, (theme) => {
   // Store the preference; applyFieldTheme decides what the field actually
   // shows, since a running night piece keeps the dark field until it ends.
   storeTheme(theme);
   applyFieldTheme(audioEngine.getHarmonicContext().character);
 });
-rightToggleSlot.appendChild(themeToggle.element);
-
-const visualModeToggle = new VisualModeToggle(loadStoredVisualMode(), (visualMode) => {
-  visualizer?.setVisualMode(visualMode);
-});
-rightToggleSlot.appendChild(visualModeToggle.element);
+viewToggleSlot.append(visualModeToggle.element, themeToggle.element);
 
 /**
  * Night pieces pull the field dark for their duration.
@@ -330,6 +333,7 @@ startBtn.addEventListener('click', async () => {
     railLeft.hidden = false;
     railRight.hidden = false;
     modeToggleSlot.hidden = false;
+    viewToggleSlot.hidden = false;
     cymaticsOverlay.show();
   } catch (err) {
     const msg =
