@@ -23,7 +23,7 @@ import {
 import { ModeToggle } from './ui/ModeToggle';
 import { PlayPanel } from './ui/PlayPanel';
 import { PlayController } from './input/PlayController';
-import { DEFAULT_BLEND_ID } from './audio/PlayBlend';
+import { DEFAULT_BLEND_ID, DEFAULT_VOICE_MODE } from './audio/PlayBlend';
 import { DEFAULT_PRESET_ID, findPreset } from './audio/PlayPresets';
 import { VisualModeToggle } from './ui/VisualModeToggle';
 import { loadStoredVisualMode } from './visual/VisualMode';
@@ -105,6 +105,7 @@ const playPanel = new PlayPanel(
     tuning: storedPlay?.tuning ?? 'scale',
     octaveShift: storedPlay?.octaveShift ?? 0,
     blend: storedPlay?.blend ?? DEFAULT_BLEND_ID,
+    voiceMode: storedPlay?.voiceMode ?? DEFAULT_VOICE_MODE,
   },
   {
     onPreset: (id) => {
@@ -121,6 +122,10 @@ const playPanel = new PlayPanel(
     },
     onBlend: (blend) => {
       audioEngine.setBlend(blend);
+      savePlayState();
+    },
+    onVoiceMode: (voiceMode) => {
+      playController.setVoiceMode(voiceMode);
       savePlayState();
     },
     onNoteOn: (note, velocity) => playController.noteOn(note, velocity),
@@ -154,6 +159,7 @@ playController.setPreset(initialPlay.presetId);
 playController.setTuning(initialPlay.tuning);
 playController.setOctave(initialPlay.octaveShift);
 audioEngine.setBlend(initialPlay.blend);
+audioEngine.setPlayVoiceMode(initialPlay.voiceMode);
 playPanel.setStatus('idle', null);
 leftData.appendChild(playPanel.element);
 
@@ -286,11 +292,10 @@ function loop(now: number): void {
     visualizer.update(features, dt, controls.getKnobs().visual, harmonic, audioEngine.getSpectrum());
     cymaticsOverlay.update(features, harmonic, controls.getLastTouched());
     if (mode === 'play') {
-      const instrument = audioEngine.getPlayInstrument();
       playPanel.update(
         harmonic,
-        instrument.getHeldKeys(),
-        instrument.getSoundingNotes(),
+        audioEngine.getPlayHeldKeys(),
+        audioEngine.getPlaySounding(),
         audioEngine.getEnsembleDuckDepth(),
         audioEngine.getPlayFollow(),
       );

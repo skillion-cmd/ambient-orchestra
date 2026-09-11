@@ -665,6 +665,32 @@ body[data-mode='calibrate'] .play-panel {
   flex: 1 1 auto;
 }
 
+/* The mode row reads as a heading for everything under it, so it gets a
+   little more weight than the rows it governs. */
+.play-voice-mode button {
+  letter-spacing: 0.14em;
+}
+
+/* Each of these sets its own `display`, which beats the UA's [hidden] rule
+   — without this, hiding the presets in Beat mode hides nothing. */
+.play-presets[hidden],
+.play-row[hidden],
+.play-kit-legend[hidden] {
+  display: none;
+}
+
+/* What each key hits in Beat mode, in key order — twelve cells, wrapping,
+   so the layout on screen reads left to right like the keyboard does. */
+.play-kit-legend {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px 6px;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ao-text-faint);
+}
+
 .play-octave {
   align-items: center;
 }

@@ -10,13 +10,16 @@ import type { PieceRequest } from './HarmonicField';
 import { RoomWalk } from './RoomWalk';
 import { NeighbourRoom } from './NeighbourRoom';
 import { PlayInstrument } from './PlayInstrument';
+import { PlayKit } from './PlayKit';
 import {
   DEFAULT_BLEND_ID,
+  DEFAULT_VOICE_MODE,
   duckFor,
   findBlend,
   instrumentLevel,
   NO_DUCK,
   type PlayBlend,
+  type PlayVoiceMode,
 } from './PlayBlend';
 
 /** Mirrors the UI's AppMode without the audio layer reaching up into it. */
@@ -107,6 +110,13 @@ export class AudioEngine {
   private readonly playBus: Tone.Gain;
   private readonly playLimiter: Tone.Limiter;
   private readonly playInstrument: PlayInstrument;
+  /** The kit under your hands in Beat mode — its own dry path, see below. */
+  private readonly playKitBus: Tone.Gain;
+  private readonly playKitLimiter: Tone.Limiter;
+  private readonly playKitSend: Tone.Gain;
+  private readonly playKit: PlayKit;
+  private voiceMode: PlayVoiceMode = DEFAULT_VOICE_MODE;
+  private lastKitLevel = -1;
   /** True while play mode owns the front of the mix. */
   private playActive = false;
   private readonly playGlue: Tone.Compressor;
@@ -281,6 +291,23 @@ export class AudioEngine {
     this.playLimiter.connect(this.highpass);
     this.playInstrument = new PlayInstrument(this.playBus);
 
+    // The played kit takes the *generative* kit's route, not the
+    // instrument's: dry to the tilt EQ with its own limiter and a small
+    // parallel send into the reverb. A drum does not want the 90Hz highpass
+    // (which is most of a kick), a 14s reverb (which is mush) or the glue
+    // compressor (where every hit would duck the field), and those are
+    // exactly the three things the melodic instrument's path is fine with.
+    // Sitting where the Conductor's kit sits is also what makes the two read
+    // as one kit being shared rather than as a drum machine over a piece.
+    this.playKitBus = new Tone.Gain(0);
+    this.playKitLimiter = new Tone.Limiter(-6);
+    this.playKitBus.connect(this.playKitLimiter);
+    this.playKitLimiter.connect(this.tiltEQ);
+    this.playKitSend = new Tone.Gain(0.1);
+    this.playKitBus.connect(this.playKitSend);
+    this.playKitSend.connect(this.reverb);
+    this.playKit = new PlayKit(this.playKitBus);
+
     // Foundation weight: the Sub knob scales the sub drone (into the pad
     // bus) together with the deep-pressure path above.
     this.foundationBus = new Tone.Gain(1);
@@ -334,6 +361,8 @@ export class AudioEngine {
     this.updateRooms(dt);
     this.playInstrument.syncContext(this.conductor.getHarmonicContext());
     this.playInstrument.update(dt);
+    this.playKit.syncContext(this.conductor.getHarmonicContext());
+    this.playKit.update(dt);
     this.updateFollow();
     this.updateDuck();
   }
@@ -400,7 +429,10 @@ export class AudioEngine {
 
   /** Play channel for the visual side — a struck chord blooms the field. */
   private playChannels() {
-    return { playPulse: this.playActive ? this.playInstrument.getPulse() : 0 };
+    if (!this.playActive) return { playPulse: 0 };
+    const pulse =
+      this.voiceMode === 'beat' ? this.playKit.getPulse() : this.playInstrument.getPulse();
+    return { playPulse: pulse };
   }
 
   setKnobs(knobs: AppKnobs): void {
@@ -437,6 +469,60 @@ export class AudioEngine {
     return this.playInstrument;
   }
 
+  getPlayKit(): PlayKit {
+    return this.playKit;
+  }
+
+  getPlayVoiceMode(): PlayVoiceMode {
+    return this.voiceMode;
+  }
+
+  /**
+   * Swap which half of the orchestra the keybed plays.
+   *
+   * Whatever the old mode was holding is released here rather than left to
+   * hang: a chord still sounding while the keys under it have become drums
+   * has nothing left that will ever send its note-offs.
+   */
+  setPlayVoiceMode(mode: PlayVoiceMode): void {
+    if (mode === this.voiceMode) return;
+    this.voiceMode = mode;
+    this.playInstrument.allNotesOff();
+    this.playKit.allNotesOff();
+    // A chord the ensemble had taken is not an instruction you are still
+    // giving once your hands are on the drums.
+    this.conductor.harmonicField.clearPlayerLead();
+    this.lastPlayLevel = -1;
+    this.lastKitLevel = -1;
+    if (this.playActive) this.applyPlayLevel(0.25);
+  }
+
+  /** Every in-app input source funnels through here, so which half of the
+   * orchestra a key plays is decided in exactly one place. */
+  playNoteOn(midiNote: number, velocity: number): void {
+    if (this.voiceMode === 'beat') this.playKit.noteOn(midiNote, velocity);
+    else this.playInstrument.noteOn(midiNote, velocity);
+  }
+
+  playNoteOff(midiNote: number): void {
+    if (this.voiceMode === 'beat') this.playKit.noteOff(midiNote);
+    else this.playInstrument.noteOff(midiNote);
+  }
+
+  /** Keys lit on the on-screen keyboard, whichever mode is playing. */
+  getPlayHeldKeys(): number[] {
+    return this.voiceMode === 'beat'
+      ? this.playKit.getHeldKeys()
+      : this.playInstrument.getHeldKeys();
+  }
+
+  /** What is sounding — pitches in Melody, kit pieces in Beat. */
+  getPlaySounding(): string[] {
+    return this.voiceMode === 'beat'
+      ? this.playKit.getSoundingLabels()
+      : this.playInstrument.getSoundingNotes();
+  }
+
   /**
    * Open or close the instrument's path into the mix.
    *
@@ -449,15 +535,31 @@ export class AudioEngine {
     this.playActive = active;
     if (!active) {
       this.playInstrument.allNotesOff();
+      this.playKit.allNotesOff();
       this.conductor.harmonicField.clearPlayerLead();
       this.ensembleDuck = { ...NO_DUCK };
       this.applyBusGains(1.5);
     }
     this.lastPlayLevel = -1;
+    this.lastKitLevel = -1;
     this.playBus.gain.rampTo(
       active ? instrumentLevel(this.blend, this.masterIntensity) : 0,
       active ? 0.15 : 0.6,
     );
+    this.playKitBus.gain.rampTo(active ? this.kitLevel() : 0, active ? 0.15 : 0.6);
+  }
+
+  /**
+   * The played kit's bus level.
+   *
+   * Voiced against the generative kit's bus rather than against the melodic
+   * instrument's: the two are in the same register through the same path,
+   * and what matters is that a hit you play lands at about the weight of a
+   * hit the Conductor plays. It rides the session arc by the same amount
+   * the instrument does, for the same reason.
+   */
+  private kitLevel(): number {
+    return instrumentLevel(this.blend, this.masterIntensity) * 1.15;
   }
 
   /** How far forward the instrument sits, and how the orchestra answers it. */
@@ -487,7 +589,7 @@ export class AudioEngine {
    * it here would mean Behind could never show a settled shape at all.
    */
   getPlayFollow(): { confidence: number; taken: boolean } {
-    if (!this.playActive) return { confidence: 0, taken: false };
+    if (!this.playActive || this.voiceMode === 'beat') return { confidence: 0, taken: false };
     const chord = this.playInstrument.getIntent().readChord();
     return {
       confidence: chord?.confidence ?? 0,
@@ -510,7 +612,11 @@ export class AudioEngine {
    * made in one place — see `PlayBlend.follow`.
    */
   private updateFollow(): void {
-    if (!this.playActive) return;
+    // Drums are not an instruction about harmony. Beat mode still ducks and
+    // still sits in the room, but it has nothing to tell the field about
+    // which chord to be in, and reading one out of a kick pattern would be
+    // inventing intent that isn't there.
+    if (!this.playActive || this.voiceMode === 'beat') return;
     const field = this.conductor.harmonicField;
     const intent = this.playInstrument.getIntent();
 
@@ -540,8 +646,9 @@ export class AudioEngine {
    * in the energy, and ramping a smooth signal again only adds lag.
    */
   private updateDuck(): void {
-    const energy = this.playActive ? this.playInstrument.getEnergy() : 0;
-    const next = energy > 0 ? duckFor(this.blend, energy) : NO_DUCK;
+    const source = this.voiceMode === 'beat' ? this.playKit : this.playInstrument;
+    const energy = this.playActive ? source.getEnergy() : 0;
+    const next = energy > 0 ? duckFor(this.blend, energy, this.voiceMode) : NO_DUCK;
     const moved = (Object.keys(next) as (keyof LayerPresence)[]).some(
       (k) => Math.abs(next[k] - this.ensembleDuck[k]) > DUCK_EPSILON,
     );
@@ -567,9 +674,15 @@ export class AudioEngine {
    */
   private applyPlayLevel(rampSec = 1.2): void {
     const level = instrumentLevel(this.blend, this.masterIntensity);
-    if (Math.abs(level - this.lastPlayLevel) < 0.004) return;
-    this.lastPlayLevel = level;
-    this.playBus.gain.rampTo(level, rampSec);
+    if (Math.abs(level - this.lastPlayLevel) >= 0.004) {
+      this.lastPlayLevel = level;
+      this.playBus.gain.rampTo(level, rampSec);
+    }
+    const kit = this.kitLevel();
+    if (Math.abs(kit - this.lastKitLevel) >= 0.004) {
+      this.lastKitLevel = kit;
+      this.playKitBus.gain.rampTo(kit, rampSec);
+    }
   }
 
   /**
@@ -912,6 +1025,7 @@ export class AudioEngine {
     if (this.spaceThrowTimeout) clearTimeout(this.spaceThrowTimeout);
     this.neighbour?.dispose();
     this.playInstrument.dispose();
+    this.playKit.dispose();
     Tone.getTransport().stop();
     this.running = false;
   }

@@ -1,4 +1,11 @@
-import { DEFAULT_BLEND_ID, isBlendId, type PlayBlendId } from '../audio/PlayBlend';
+import {
+  DEFAULT_BLEND_ID,
+  DEFAULT_VOICE_MODE,
+  isBlendId,
+  isVoiceMode,
+  type PlayBlendId,
+  type PlayVoiceMode,
+} from '../audio/PlayBlend';
 import type { AppKnobs } from '../audio/types';
 import { DEFAULT_KNOBS } from '../audio/types';
 
@@ -25,6 +32,7 @@ export interface StoredPlayState {
   tuning: 'scale' | 'chromatic';
   octaveShift: number;
   blend: PlayBlendId;
+  voiceMode: PlayVoiceMode;
 }
 
 export function loadStoredPlayState(): StoredPlayState | null {
@@ -44,7 +52,10 @@ export function loadStoredPlayState(): StoredPlayState | null {
     // existed is still a good calibration, and dropping it would reset
     // someone's voice and octave over a field they never chose.
     const blend = isBlendId(value.blend) ? value.blend : DEFAULT_BLEND_ID;
-    return { presetId: value.presetId, tuning, octaveShift, blend };
+    // Same backfill for the same reason — a state saved before Beat mode
+    // existed is a state that was in Melody.
+    const voiceMode = isVoiceMode(value.voiceMode) ? value.voiceMode : DEFAULT_VOICE_MODE;
+    return { presetId: value.presetId, tuning, octaveShift, blend, voiceMode };
   } catch {
     return null;
   }
