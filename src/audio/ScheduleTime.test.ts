@@ -84,6 +84,31 @@ describe('ScheduleTime.atLeast', () => {
     // now is 100; the kit schedules well ahead of it and must stay there.
     expect(s.atLeast(140)).toBe(140);
   });
+
+  it('never hands back a time the clock has already passed', () => {
+    const s = new ScheduleTime(clock);
+    // A stalled main thread: the transport tick ran late, so the hit it is
+    // placing is already behind us. Tone would clamp it to now anyway.
+    expect(s.atLeast(99.4)).toBe(100);
+  });
+
+  it('keeps two overdue hits apart rather than stacking them on now', () => {
+    const s = new ScheduleTime(clock);
+    // Both requested times are in the past. Left alone they would each be
+    // clamped to the same `currentTime` and the second would throw.
+    const first = s.atLeast(99.4);
+    const second = s.atLeast(99.5);
+    expect(first).toBe(100);
+    expect(second).toBeGreaterThan(first);
+    expect(second).toBeCloseTo(100 + MIN_EVENT_GAP_SEC, 9);
+  });
+
+  it('picks the groove back up once the clock is behind again', () => {
+    const s = new ScheduleTime(clock);
+    s.atLeast(99.4);
+    // The stall is over and the next hit is properly ahead: it keeps its time.
+    expect(s.atLeast(100.5)).toBe(100.5);
+  });
 });
 
 describe('fitToStep', () => {
