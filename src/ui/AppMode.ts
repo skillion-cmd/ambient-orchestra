@@ -14,12 +14,25 @@ import { DEFAULT_KNOBS } from '../audio/types';
  * Calibrate — direct control: auto-drift off, knob settings stick and persist.
  * Play — Calibrate plus an instrument: a MIDI or computer keyboard plays a
  * polyphonic voice at the front of the mix while the orchestra ducks behind it.
+ * Kit — the same kit, built rather than played: a step grid two, four or
+ * eight bars long that loops against the transport while the piece runs.
+ * Stage — the piece written down before it happens: an ordered set of cues,
+ * each a stretch of bars with a phase, a set of layers and the loop or not.
+ *
+ * The last two are the two halves of making something rather than steering
+ * it — a bar of it, and a whole piece of it.
  */
-export type AppMode = 'drift' | 'calibrate' | 'play';
+export type AppMode = 'drift' | 'calibrate' | 'play' | 'kit' | 'stage';
+
+const MODES: AppMode[] = ['drift', 'calibrate', 'play', 'kit', 'stage'];
+
+export function isAppMode(value: unknown): value is AppMode {
+  return typeof value === 'string' && (MODES as string[]).includes(value);
+}
 
 /** Modes where the knobs hold still and a calibration is worth remembering. */
 export function isDirectMode(mode: AppMode): boolean {
-  return mode === 'calibrate' || mode === 'play';
+  return mode !== 'drift';
 }
 
 const MODE_KEY = 'ao-mode';
@@ -72,7 +85,7 @@ export function storePlayState(state: StoredPlayState): void {
 export function loadStoredMode(): AppMode {
   try {
     const stored = localStorage.getItem(MODE_KEY);
-    if (stored === 'drift' || stored === 'calibrate' || stored === 'play') return stored;
+    if (isAppMode(stored)) return stored;
   } catch {
     /* private browsing */
   }

@@ -4,6 +4,8 @@ A procedural ambient synth orchestra with a layered monochrome visual field. Doz
 
 Pieces run anywhere from forty-five seconds to a quarter of an hour, the layer holding the foreground rotates continuously, and about a third of them carry no beat at all — the ones that do can put a soft kit right at the front. There is always a second room playing next door; walking through the doorway is how one piece becomes the next.
 
+Five modes, and they are five relationships with the same orchestra: let it compose (**Drift**), steer it (**Calibrate**), play over it (**Play**), build a loop for it to play (**Kit**), or write the shape of the piece before you hear it (**Stage**).
+
 Inspired by the idea that good ambient music flows in and out of interest within a space — Eno by way of Floating Points, Bicep, Aphex Twin, Caribou, and Nosaj Thing — and by the way the transition spaces at Paradiso blurred one room's set into another's.
 
 ## Features
@@ -108,6 +110,77 @@ field, the same room, but with a polyphonic instrument at the front of it.
   filter above its resting brightness rather than being the only thing between
   you and a muffled instrument
 
+### Kit — build the loop
+
+Play mode's kit, written down instead of played. A step grid: twelve pieces
+down the side, sixteenths across, and a loop **two, four or eight bars** long
+that rides the transport beside the Conductor's own bar lines.
+
+- **Two, four or eight bars** — the lengths a loop is *heard* in: two bars is
+  a groove, four is a phrase, eight is a section. Every one is a power of two,
+  so a loop always lines up with the ensemble's bars however long the piece
+  has been running. Growing the loop **tiles** what is already written rather
+  than padding it with silence — four bars opens as the two you had, twice,
+  with the back half now yours to vary, which is what "I want room for a
+  variation" actually means
+- **One bar at a time, with a pager** — eight bars is 128 columns, which on
+  any screen this runs on is three pixels a cell. You edit a bar and hear the
+  loop, the way a drum machine has always worked. The pager never jumps under
+  your hand; the bar the loop is currently in is marked instead, and going
+  there is one click
+- **Silent, hit, accent** — one click cycles a cell through three states, not
+  two. A grid that can only say "hit" cannot write down the quiet hats between
+  the loud ones, which is most of what makes a groove breathe
+- **Four starting points** — Four, Broken, 2-step and Pulse, each one bar
+  tiled to whatever length the loop is: a groove to take apart rather than
+  192 empty cells and no clue which one makes a sound you recognise. **Clear**
+  is in the same row, and shift-clicking a piece name wipes just that row
+- **It is the orchestra's kit, in the orchestra's key** — the same twelve
+  pieces Beat mode plays, so the kick, the toms and the sub are tuned to
+  whatever key the field has drifted to, and the loop takes the generative
+  kit's own route into the mix. It follows the tempo wherever the piece takes
+  it, garage tempo included, because it is scheduled in musical time rather
+  than on a timer
+- **The orchestra makes room for it, in proportion** — a running loop ducks
+  the ensemble the way played drums do, but weighted down: a pattern is a
+  part rather than a finger, and a kick every bar should not hold the room
+  back as hard as a wall of sixteenths
+- **Play over it** — the computer keybed and any MIDI controller stay live in
+  Kit mode and strike the same kit, so you can jam over the loop you are
+  building. Your Play-mode voice is not touched by the trip
+
+### Stage — write the performance
+
+The fourth relationship with the orchestra, and the one an ambient engine is
+otherwise bad at: deciding the shape of a piece in advance, then hearing it.
+A performance is an ordered list of **cues**, and each cue is a stretch of
+bars with a phase, a set of layers, and the loop under it or not.
+
+- **A cue is four decisions** — what the ensemble is doing (Heat Haze,
+  Gather, Bloom, Hang, Morph, Exhale), how long it holds (1 to 16 bars),
+  which of the five layers are in the room (pad, melody, air, sub, beat), and
+  whether your Kit loop plays under it
+- **It is an arrangement, not a recording** — nothing here schedules a note.
+  A cue tells the Conductor which phase to be in and which layers are
+  audible, and the Conductor goes on composing inside that. Two runs of the
+  same set are the same shape and never the same piece, which is the whole
+  point of writing it down for *this* orchestra
+- **A layer a cue leaves out recedes rather than mutes** — about -24dB, a
+  shade under where the balance walk's own floor sits, so a layer coming back
+  is the room opening up rather than a mute button being let go
+- **It starts on a bar line** — pressing Run arms the set; the first cue
+  opens on the next bar, and the panel says so, because a set that has been
+  started and is waiting looks exactly like a button that did not work. Ask
+  it to **start on a fresh piece** — open or night — and it waits for that
+  piece to arrive and opens at the top of it instead
+- **Loop the set** or run it once. Either way the live cue is lit, and the
+  line above the list counts the bars left in it
+- **Editable while it runs** — the set is handed over cue by cue, so the cue
+  after the one you are hearing is the one you just changed
+- **Four cues to start from**, an arc rather than a blank page: the room
+  opens, the melody arrives over the loop, everything blooms, and it leaves
+  with the pads
+
 ### Visuals
 
 - **Layered 3D field (Three.js)** — two render layers sharing one audio-driven breath:
@@ -180,14 +253,17 @@ field, the same room, but with a polyphonic instrument at the front of it.
 
 ### UI
 
-Two edge rails frame an open center, each pairing live data with the knobs that drive it — and in Play the center is where the instrument stands:
+Two edge rails frame an open center, each pairing live data with the knobs that drive it — and in Play, Kit and Stage the center is where the thing you are working on stands:
 
 - **Left rail — Audio:** movement / phase readout, a **cymatics panel** (scrolling waveform, beat markers, bass/mid/high spectrum, live key + mode + chord function, and a console-style ensemble meter), and the audio knob grid
 - **Right rail — Visual:** form readout, a **visual scope** (particle population, ghost↔body layer balance, cool↔warm mood, fog depth), and the visual knob grid
-- **Top centre — what you are looking at:** the Ink / Currents / Resonance switch and the light / dark field toggle, mirroring Drift / Calibrate / Play at the bottom. Outside the rails, so both stay reachable in Drift
+- **Top centre — what you are looking at:** the Ink / Currents / Resonance switch and the light / dark field toggle, mirroring the mode switch at the bottom. Outside the rails, so both stay reachable in Drift
 - **10 knobs** — six sound, four vision (see below)
 - **Piece picker (Calibrate only)** — choose a length and a world and play that piece now, instead of waiting for two weighted draws to agree. Drift keeps its unpredictability; direct control belongs to Calibrate
-- **Play stage (Play only)** — the instrument stands in the middle of the screen, above the mode switch and clear of both rails: Melody / Beat, connected controller, eight voices (or the black-key kit legend), the in-key / chromatic toggle, octave, blend, the field's live key, what is sounding in full size, and a keyboard wide enough to hit, every cap carrying the pitch it will sound. The rails keep what they are for — the engine, and the knobs that steer it
+- **Centre stage (Play, Kit and Stage)** — one panel per mode, in the middle of the screen above the mode switch and clear of both rails. The rails keep what they are for — the engine, and the knobs that steer it:
+  - **Play** — Melody / Beat, connected controller, eight voices (or the black-key kit legend), the in-key / chromatic toggle, octave, blend, the field's live key, what is sounding in full size, and a keyboard wide enough to hit, every cap carrying the pitch it will sound
+  - **Kit** — loop length, the bar pager, the twelve-row step grid, the starter patterns, and one line saying how many hits the loop holds and how long it runs at the tempo the piece is currently at
+  - **Stage** — Run, the cue list with its live cue lit, and one line saying where the set has got to
 - **Knob automator** — slow, phrase-aligned autonomous drift when you leave the controls alone
 - **PerfMonitor** — a dev-only health gate (press **D**) reporting frame rate, audio-context health, console errors, and heap growth
 - **Error overlay** — a clear message if WebGL or audio fails to start
@@ -228,9 +304,9 @@ sheet docked to the bottom edge, capped at two thirds of the screen so the
 field keeps the rest. Nothing moves in the DOM: the wrapper is
 `display: contents` on a wide screen and a flex column below the breakpoint.
 
-- **Tabs** follow the mode — Audio / Visual in Calibrate, with Play added and
-  selected first in Play mode. Drift has no tabs, because Drift has no
-  controls on any screen size
+- **Tabs** follow the mode — Audio / Visual in Calibrate, with the mode's own
+  panel added and selected first in Play, Kit and Stage. Drift has no tabs,
+  because Drift has no controls on any screen size
 - **Hide** collapses the sheet to just the mode switch and the tabs, so the
   field has the whole screen and getting back is one tap. It is what a
   double-click does on a wide screen
@@ -247,6 +323,10 @@ field keeps the rest. Nothing moves in the DOM: the wrapper is
   the range. The keyboard is sticky to the bottom of the sheet, so its
   settings scroll behind it rather than taking it off screen. The computer
   keybed and any MIDI controller keep their full two-octave span either way
+- **The step grid fits without scrolling** — the piece labels give up what
+  they can and the sixteen cells take it, because a loop you have to scroll
+  sideways to see is not a loop you can read. Cells take a finger's height on
+  any touchscreen
 - Both data panels are drawn to the width of the column they are in rather
   than a fixed 220px, and MIDI learn folds away — eight cells across is
   unusable at this width, and Web MIDI barely exists on a phone
@@ -297,8 +377,10 @@ npm run test:watch
 ```
 
 Unit tests cover music theory helpers, harmonic field transitions, event
-scheduling, the Play keybed mapping and mix model, stored calibrations, and
-MIDI device profiles and learned bindings.
+scheduling, the Play keybed mapping and mix model, the kit grid and the
+transport arithmetic it loops on, the performance model and the runner that
+walks it, stored calibrations, loops and sets, and MIDI device profiles and
+learned bindings.
 
 ## Controls
 
@@ -327,10 +409,10 @@ MIDI device profiles and learned bindings.
 | Input | Action |
 |-------|--------|
 | **Double-click** or **F11** | Hide / show both rails (full-bleed view). On a phone, collapse the dock — same as the **Hide** button |
-| **D** | Toggle the PerfMonitor health readout (Drift and Calibrate — in Play, D is a key) |
+| **D** | Toggle the PerfMonitor health readout (Drift, Calibrate and Stage — in Play and Kit, D is a key) |
 | **Ink / Currents / Resonance** | Switch visual (top centre) |
 | **Light field / Dark field** | Toggle visual palette (top centre) |
-| **A**–**;** / **W E T Y U O P** (Play) | Computer keybed — white keys and black keys |
+| **A**–**;** / **W E T Y U O P** (Play, Kit) | Computer keybed — white keys and black keys; in Kit they strike the same pieces the grid writes |
 | **Z** / **X** (Play) | Shift the keybed down / up an octave |
 | **Next phase** button | Advance movement phase |
 | **Next movement** button | Dissolve this piece and begin another |
@@ -384,10 +466,13 @@ src/
   visual/         Visualizer, ArtDirectorSkill, FluidField, LayerBalance,
                   ScenePalette
   visual/three/   GhostField, ExtrusionField, TrailPass, ghost/milky shaders
-  audio/          ... PlayInstrument, PlayPresets, PlayMapping, PlayBlend
+  audio/          ... PlayInstrument, PlayPresets, PlayMapping, PlayBlend,
+                  PlayKit, KitPattern, KitSequencer, TransportGrid,
+                  Performance, PerformanceRunner
   input/          MidiInput, MidiMap, KeyboardInput, PlayController
   ui/             Controls, SessionReadout, CymaticsOverlay, VisualScope,
-                  KnobAutomator, ThemeToggle, VisualModeToggle, PlayPanel
+                  KnobAutomator, ThemeToggle, VisualModeToggle, PlayPanel,
+                  KitPanel, StagePanel
   diagnostics/    PerfMonitor
 ```
 
@@ -407,6 +492,8 @@ src/
 - **A `Tone.Loop` callback runs where nothing can catch it** — out in the transport's own tick, so a throw there takes the rest of that tick's scheduled events with it, whichever voice they belonged to. Two things were throwing: percussion voiced with `sustain: 0` was scheduling a release that did nothing audible and could still land after its own next attack, and a clip was ramping a filter frequency an LFO was already driving. Both are now what they should have been — attack-only drums, one writer per parameter
 - **Playing is not conducting** — the instrument takes the front of the mix and the orchestra leans away, but the orchestra never stops composing. The key you are playing in is the key the piece drifted to on its own, and it will drift again underneath you. A note already sounding keeps the pitch it was struck at; only the next one hears the new key
 - **Playing is joining, not switching on** — an instrument that entered at unity next to layer buses sitting near half, and dropped the whole ensemble 10dB the instant a key went down, is a synth over a backing track that has been told to get out of the way. Every part of the mix answer is proportional instead: the level, the register the ensemble makes room in, how far it leans, and how much of the piece's own arc the instrument rides
+- **A loop counts in ticks, not seconds** — the engine's bar number comes from elapsed seconds over the current tempo, which is the right answer for "how far into the piece are we" and the wrong one for "which bar of my loop is this": divide by a tempo that just changed and the bar jumps, backwards when the piece speeds up. A pattern keyed off that would skip a bar or replay one every time the Tempo knob moved or a night piece pulled the room up to garage tempo. Ticks are the transport's own musical time — monotonic, tempo-independent — so the loop and the ensemble never disagree about where "one" is
+- **A written set is a shape, not a recording** — a Stage cue hands the Conductor a phase and a set of audible layers and then leaves it alone. The piece it produces is composed live inside the arrangement, which is why running the same set twice gives you the same shape and a different piece. It is the only way to write down a performance for an orchestra that is still improvising
 - **Two creative roles:** the Conductor Skill directs the audio (intensity, stereo image, flourish cadence) and the Art Director Skill directs the visuals (fog, focus, mood, constellations) — both read the same shared harmonic context, so picture and sound stay in step
 - **Visual palette:** strict depth-pass monochrome. Light field (`#ececec`) with dark ink ghosts is the default; dark field inverts to luminous ghosts on a deep `#08080f` ground, with bodies tinted into the same blue-black family
 - **Ink-in-water:** ghosts deposit semi-transparent strokes into a fade buffer each frame; older ink slowly bleaches back toward the field color — Drift toward Mist lengthens the dissolve. The buffer is half-float: it feeds back into itself every frame, and at 8 bits the convergence stalls once a pixel is within a few levels of the background, which printed a permanent ghost of the last image onto the mostly-empty Resonance plate

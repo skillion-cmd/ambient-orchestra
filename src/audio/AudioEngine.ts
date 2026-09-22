@@ -12,6 +12,16 @@ import { RoomWalk } from './RoomWalk';
 import { NeighbourRoom } from './NeighbourRoom';
 import { PlayInstrument } from './PlayInstrument';
 import { PlayKit } from './PlayKit';
+import { KitSequencer } from './KitSequencer';
+import type { KitPattern } from './KitPattern';
+import { PerformanceRunner, type RunnerState } from './PerformanceRunner';
+import {
+  presenceForCue,
+  type CuePosition,
+  type StageCue,
+  type StagePerformance,
+} from './Performance';
+import { barAtTicks } from './TransportGrid';
 import {
   DEFAULT_BLEND_ID,
   DEFAULT_VOICE_MODE,
@@ -24,7 +34,7 @@ import {
 } from './PlayBlend';
 
 /** Mirrors the UI's AppMode without the audio layer reaching up into it. */
-type EngineMode = 'drift' | 'calibrate' | 'play';
+type EngineMode = 'drift' | 'calibrate' | 'play' | 'kit' | 'stage';
 
 /**
  * How far the per-layer duck has to move before it is worth writing.
@@ -35,6 +45,17 @@ type EngineMode = 'drift' | 'calibrate' | 'play';
  * one, and the same threshold: a move this small is inaudible.
  */
 const DUCK_EPSILON = 0.006;
+
+/**
+ * How long a cue takes to move the layers it changes.
+ *
+ * A cue lands on a bar line and the shortest cue anyone writes is one bar —
+ * about four seconds at this engine's resting tempo, less at a night piece's.
+ * So the change has to be complete well inside a bar, and slow enough that a
+ * layer arriving reads as the room opening rather than as a switch. A second
+ * and a half is both.
+ */
+const CUE_RAMP_SEC = 1.5;
 
 /**
  * The deepest the mix may go once everything that dips it has multiplied.
@@ -118,6 +139,20 @@ export class AudioEngine {
   private readonly playKit: PlayKit;
   private voiceMode: PlayVoiceMode = DEFAULT_VOICE_MODE;
   private lastKitLevel = -1;
+  /** The built loop, playing itself against the transport. */
+  private readonly kitSequencer: KitSequencer;
+  /** The written set, walking itself through the bars. */
+  private readonly performance = new PerformanceRunner();
+  /**
+   * What the live cue is doing to each bus, 1 = untouched.
+   *
+   * A fourth factor in `applyBusGains` beside the knobs, the balance walk and
+   * the play duck, for the same reason the duck is a third: these are four
+   * independent opinions about how loud a layer should be, and anything that
+   * wrote a bus gain directly would silently overrule the other three on its
+   * next write.
+   */
+  private stagePresence: LayerPresence = { ...NEUTRAL_PRESENCE };
   /** True while play mode owns the front of the mix. */
   private playActive = false;
   private readonly playGlue: Tone.Compressor;
@@ -314,6 +349,7 @@ export class AudioEngine {
     this.playKitBus.connect(this.playKitSend);
     this.playKitSend.connect(this.reverb);
     this.playKit = new PlayKit(this.playKitBus);
+    this.kitSequencer = new KitSequencer(this.playKit);
 
     // Foundation weight: the Sub knob scales the sub drone (into the pad
     // bus) together with the deep-pressure path above.
@@ -356,6 +392,7 @@ export class AudioEngine {
     this.applyLookAhead();
     await this.reverb.generate();
     Tone.getTransport().start();
+    this.kitSequencer.attach();
     this.running = true;
     this.conductor.start();
     this.applyKnobs();
@@ -372,6 +409,7 @@ export class AudioEngine {
     this.playKit.update(dt);
     this.updateFollow();
     this.updateDuck();
+    this.updatePerformance();
   }
 
   /**
@@ -438,7 +476,9 @@ export class AudioEngine {
   private playChannels() {
     if (!this.playActive) return { playPulse: 0 };
     const pulse =
-      this.voiceMode === 'beat' ? this.playKit.getPulse() : this.playInstrument.getPulse();
+      this.effectiveVoiceMode() === 'beat'
+        ? this.playKit.getPulse()
+        : this.playInstrument.getPulse();
     return { playPulse: pulse };
   }
 
@@ -463,13 +503,35 @@ export class AudioEngine {
     this.mode = mode;
     this.conductor.clock.steadyTempo = mode !== 'drift';
     this.applyLookAhead();
-    this.setPlayActive(mode === 'play');
+    // Kit and Stage both put drums in front of the ensemble, so both want the
+    // played kit's path open and the orchestra leaning away from it — the
+    // same front-of-mix arrangement Play asks for.
+    this.setPlayActive(mode === 'play' || mode === 'kit' || mode === 'stage');
+    // A loop left running under Calibrate would be a beat nobody asked for
+    // over a piece that has its own. Stage owns the loop through its cues, so
+    // only the modes that can see the grid may leave it going.
+    if (mode !== 'kit' && mode !== 'stage') this.kitSequencer.setEnabled(false);
+    if (mode !== 'stage') this.stopPerformance();
+  }
+
+  /**
+   * Which half of the orchestra the keybed and the duck are dealing with.
+   *
+   * Melody or Beat is the player's choice in Play mode, and not a choice at
+   * all in the two modes built around drums: in Kit and Stage the keys are
+   * the kit, whatever Play was last left set to. Reading it through here
+   * rather than forcing `voiceMode` keeps the Play-mode preference intact —
+   * a trip through Kit mode should not come back having swapped your
+   * instrument for a snare.
+   */
+  private effectiveVoiceMode(): PlayVoiceMode {
+    return this.mode === 'kit' || this.mode === 'stage' ? 'beat' : this.voiceMode;
   }
 
   /** Scheduling headroom for the mode we're in — see `AMBIENT_LOOKAHEAD`. */
   private applyLookAhead(): void {
     Tone.getContext().lookAhead =
-      this.mode === 'play' ? PLAY_LOOKAHEAD : AMBIENT_LOOKAHEAD;
+      this.mode === 'drift' || this.mode === 'calibrate' ? AMBIENT_LOOKAHEAD : PLAY_LOOKAHEAD;
   }
 
   getPlayInstrument(): PlayInstrument {
@@ -507,27 +569,137 @@ export class AudioEngine {
   /** Every in-app input source funnels through here, so which half of the
    * orchestra a key plays is decided in exactly one place. */
   playNoteOn(midiNote: number, velocity: number): void {
-    if (this.voiceMode === 'beat') this.playKit.noteOn(midiNote, velocity);
+    if (this.effectiveVoiceMode() === 'beat') this.playKit.noteOn(midiNote, velocity);
     else this.playInstrument.noteOn(midiNote, velocity);
   }
 
   playNoteOff(midiNote: number): void {
-    if (this.voiceMode === 'beat') this.playKit.noteOff(midiNote);
+    if (this.effectiveVoiceMode() === 'beat') this.playKit.noteOff(midiNote);
     else this.playInstrument.noteOff(midiNote);
   }
 
   /** Keys lit on the on-screen keyboard, whichever mode is playing. */
   getPlayHeldKeys(): number[] {
-    return this.voiceMode === 'beat'
+    return this.effectiveVoiceMode() === 'beat'
       ? this.playKit.getHeldKeys()
       : this.playInstrument.getHeldKeys();
   }
 
   /** What is sounding — pitches in Melody, kit pieces in Beat. */
   getPlaySounding(): string[] {
-    return this.voiceMode === 'beat'
+    return this.effectiveVoiceMode() === 'beat'
       ? this.playKit.getSoundingLabels()
       : this.playInstrument.getSoundingNotes();
+  }
+
+  // ——— The built loop, and the written set ———
+
+  /** The step sequencer, for the Kit panel to draw and edit. */
+  getKitSequencer(): KitSequencer {
+    return this.kitSequencer;
+  }
+
+  /** Hand the sequencer an edited grid. Patterns are replaced whole — see
+   * `KitSequencer` — so this is safe mid-loop. */
+  setKitPattern(pattern: KitPattern): void {
+    this.kitSequencer.setPattern(pattern);
+  }
+
+  setKitLoopPlaying(playing: boolean): void {
+    this.kitSequencer.setEnabled(playing);
+  }
+
+  isKitLoopPlaying(): boolean {
+    return this.kitSequencer.isEnabled();
+  }
+
+  /**
+   * The bar the transport is on, counted in ticks.
+   *
+   * Deliberately not `conductor.clock.currentBar`, which divides elapsed
+   * seconds by the current tempo and therefore jumps whenever the tempo does.
+   * A written set counts bars for minutes at a time; see `TransportGrid`.
+   */
+  getTransportBar(): number {
+    const transport = Tone.getTransport();
+    return barAtTicks(Number(transport.ticks), transport.PPQ);
+  }
+
+  /**
+   * Run a written set.
+   *
+   * Nothing happens on this call but arming: the runner opens the first cue
+   * on the next bar line, or — if the set asked for a fresh piece — once the
+   * movement it just requested has actually arrived.
+   */
+  startPerformance(performance: StagePerformance): void {
+    if (performance.startFresh) {
+      // Long enough that a set of any sensible length runs inside one piece
+      // rather than being interrupted by the next one arriving.
+      this.conductor.harmonicField.requestPiece({
+        scale: 'long',
+        character: performance.startFresh,
+      });
+      this.conductor.requestNextMovement();
+    }
+    this.performance.start(
+      performance,
+      this.getTransportBar(),
+      this.conductor.getHarmonicContext().movementIndex,
+    );
+  }
+
+  stopPerformance(): void {
+    const wasActive = this.performance.isActive();
+    this.performance.stop();
+    if (wasActive) this.clearCue();
+  }
+
+  /** Where the set has got to, for the panel's playhead. */
+  getPerformanceState(): { state: RunnerState; position: CuePosition | null } {
+    return {
+      state: this.performance.getState(),
+      position: this.performance.getPosition(),
+    };
+  }
+
+  /**
+   * Walk the set one tick.
+   *
+   * Called from `update`, so it runs on the engine clock rather than on
+   * frames — a set has to keep its place in a hidden tab, exactly as the
+   * Conductor does.
+   */
+  private updatePerformance(): void {
+    if (!this.performance.isActive()) return;
+    const tick = this.performance.advance(
+      this.getTransportBar(),
+      this.conductor.getHarmonicContext().movementIndex,
+    );
+    if (tick.entered) this.applyCue(tick.entered);
+    if (tick.ended) this.clearCue();
+  }
+
+  /**
+   * Put a cue in the room: the phase it asks for, the layers it keeps, and
+   * whether the loop plays under it.
+   *
+   * The phase goes through the Conductor's own jump, so the ensemble arrives
+   * at a bloom the way it arrives at one — it is not a volume change dressed
+   * up as an arrangement.
+   */
+  private applyCue(cue: StageCue): void {
+    this.conductor.goToPhase(cue.phase);
+    this.stagePresence = presenceForCue(cue);
+    this.applyBusGains(CUE_RAMP_SEC);
+    this.kitSequencer.setEnabled(cue.kit);
+  }
+
+  /** The set is over, or has been stopped: give the orchestra back. */
+  private clearCue(): void {
+    this.stagePresence = { ...NEUTRAL_PRESENCE };
+    this.applyBusGains(CUE_RAMP_SEC);
+    this.kitSequencer.setEnabled(false);
   }
 
   /**
@@ -596,7 +768,9 @@ export class AudioEngine {
    * it here would mean Behind could never show a settled shape at all.
    */
   getPlayFollow(): { confidence: number; taken: boolean } {
-    if (!this.playActive || this.voiceMode === 'beat') return { confidence: 0, taken: false };
+    if (!this.playActive || this.effectiveVoiceMode() === 'beat') {
+      return { confidence: 0, taken: false };
+    }
     const chord = this.playInstrument.getIntent().readChord();
     return {
       confidence: chord?.confidence ?? 0,
@@ -623,7 +797,7 @@ export class AudioEngine {
     // still sits in the room, but it has nothing to tell the field about
     // which chord to be in, and reading one out of a kick pattern would be
     // inventing intent that isn't there.
-    if (!this.playActive || this.voiceMode === 'beat') return;
+    if (!this.playActive || this.effectiveVoiceMode() === 'beat') return;
     const field = this.conductor.harmonicField;
     const intent = this.playInstrument.getIntent();
 
@@ -653,9 +827,10 @@ export class AudioEngine {
    * in the energy, and ramping a smooth signal again only adds lag.
    */
   private updateDuck(): void {
-    const source = this.voiceMode === 'beat' ? this.playKit : this.playInstrument;
+    const voiceMode = this.effectiveVoiceMode();
+    const source = voiceMode === 'beat' ? this.playKit : this.playInstrument;
     const energy = this.playActive ? source.getEnergy() : 0;
-    const next = energy > 0 ? duckFor(this.blend, energy, this.voiceMode) : NO_DUCK;
+    const next = energy > 0 ? duckFor(this.blend, energy, voiceMode) : NO_DUCK;
     const moved = (Object.keys(next) as (keyof LayerPresence)[]).some(
       (k) => Math.abs(next[k] - this.ensembleDuck[k]) > DUCK_EPSILON,
     );
@@ -878,11 +1053,12 @@ export class AudioEngine {
     const base = this.baseBusGains;
     const p = this.layerPresence;
     const d = this.ensembleDuck;
-    this.melodyBus.gain.rampTo(base.melody * p.melody * d.melody, rampSec);
-    this.padBus.gain.rampTo(base.pad * p.pad * d.pad, rampSec);
-    this.airBus.gain.rampTo(base.air * p.air * d.air, rampSec);
-    this.subBus.gain.rampTo(base.sub * p.sub * d.sub, rampSec);
-    this.pulseBus.gain.rampTo(base.pulse * p.pulse * d.pulse, rampSec);
+    const c = this.stagePresence;
+    this.melodyBus.gain.rampTo(base.melody * p.melody * d.melody * c.melody, rampSec);
+    this.padBus.gain.rampTo(base.pad * p.pad * d.pad * c.pad, rampSec);
+    this.airBus.gain.rampTo(base.air * p.air * d.air * c.air, rampSec);
+    this.subBus.gain.rampTo(base.sub * p.sub * d.sub * c.sub, rampSec);
+    this.pulseBus.gain.rampTo(base.pulse * p.pulse * d.pulse * c.pulse, rampSec);
   }
 
   /** Knob-derived delay feedback — gesture restores must re-read this
@@ -1032,6 +1208,7 @@ export class AudioEngine {
     if (this.spaceThrowTimeout) clearTimeout(this.spaceThrowTimeout);
     this.neighbour?.dispose();
     this.playInstrument.dispose();
+    this.kitSequencer.dispose();
     this.playKit.dispose();
     Tone.getTransport().stop();
     this.running = false;

@@ -13,6 +13,11 @@ describe('panelsForMode', () => {
   it('leads with the instrument in Play', () => {
     expect(panelsForMode('play')).toEqual(['play', 'audio', 'visual']);
   });
+
+  it('leads with the grid in Kit and the set in Stage', () => {
+    expect(panelsForMode('kit')).toEqual(['kit', 'audio', 'visual']);
+    expect(panelsForMode('stage')).toEqual(['stage', 'audio', 'visual']);
+  });
 });
 
 describe('panelForMode', () => {
@@ -28,6 +33,16 @@ describe('panelForMode', () => {
   it('falls back to audio when leaving Play, where the instrument tab goes', () => {
     expect(panelForMode('calibrate', 'play')).toBe('audio');
     expect(panelForMode('calibrate', null)).toBe('audio');
+  });
+
+  it('lands on the panel a mode brought with it', () => {
+    expect(panelForMode('kit', 'audio')).toBe('kit');
+    expect(panelForMode('stage', 'play')).toBe('stage');
+  });
+
+  it('drops another mode panel when leaving the mode that owned it', () => {
+    expect(panelForMode('calibrate', 'kit')).toBe('audio');
+    expect(panelForMode('calibrate', 'stage')).toBe('audio');
   });
 
   it('shows nothing in Drift', () => {

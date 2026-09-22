@@ -1,13 +1,15 @@
 import type { AppMode } from './AppMode';
 
-const MODES: { mode: AppMode; label: string }[] = [
-  { mode: 'drift', label: 'Drift' },
-  { mode: 'calibrate', label: 'Calibrate' },
-  { mode: 'play', label: 'Play' },
+const MODES: { mode: AppMode; label: string; hint: string }[] = [
+  { mode: 'drift', label: 'Drift', hint: 'hands off — the engine composes' },
+  { mode: 'calibrate', label: 'Calibrate', hint: 'the knobs hold still and steer it' },
+  { mode: 'play', label: 'Play', hint: 'an instrument at the front of the mix' },
+  { mode: 'kit', label: 'Kit', hint: 'build a drum loop over two, four or eight bars' },
+  { mode: 'stage', label: 'Stage', hint: 'write the performance, then hear it' },
 ];
 
-/** Drift / Calibrate / Play switch — lives outside the rails so it stays
- * reachable while Drift hides them. */
+/** The mode switch — lives outside the rails so it stays reachable while
+ * Drift hides them. */
 export class ModeToggle {
   readonly element: HTMLElement;
   private mode: AppMode;
@@ -20,10 +22,11 @@ export class ModeToggle {
     this.element.setAttribute('role', 'group');
     this.element.setAttribute('aria-label', 'Playback mode');
 
-    for (const { mode, label } of MODES) {
+    for (const { mode, label, hint } of MODES) {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = label;
+      button.title = hint;
       button.addEventListener('click', () => {
         if (this.mode === mode) return;
         this.setMode(mode);

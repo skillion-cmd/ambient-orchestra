@@ -193,12 +193,39 @@ export class PlayKit {
     const piece = kitPieceFor(midiNote);
     const shaped = velocityCurve(velocity);
     const octave = Math.floor(midiNote / 12) - 5;
-    this.strike(piece, shaped, octave);
+    this.strike(piece, shaped, octave, this.times.get(piece)!.next());
+    this.markStruck(piece, shaped, 1);
+  }
 
+  /**
+   * A hit from the step sequencer, placed on the transport's own grid.
+   *
+   * The difference from `noteOn` is the time and how much it counts for.
+   * A played hit happens now — `ScheduleTime.next()` — while a sequenced one
+   * has a transport time it must land on, or the loop stops being a loop.
+   *
+   * `weight` is why a running loop does not simply peg the duck. A played
+   * hit is a finger and reads as one; sixteen hits a bar from a pattern you
+   * set going is a *part*, and if each counted the same the orchestra would
+   * lean all the way back and stay there for as long as the loop ran, whether
+   * the loop was a kick every bar or a wall of sixteenths. Weighted down, the
+   * ensemble makes room in proportion to how busy the pattern actually is,
+   * which is the same rule the rest of the blend follows.
+   */
+  strikeAt(piece: KitPieceId, velocity: number, timeSec: number, weight = 0.45): void {
+    this.ensureBuilt();
+    const shaped = velocityCurve(velocity);
+    this.strike(piece, shaped, 0, this.times.get(piece)!.atLeast(timeSec));
+    this.markStruck(piece, shaped, weight);
+  }
+
+  /** What a strike does to everything that isn't sound: the panel's labels,
+   * the field's bloom, and how far the orchestra leans away. */
+  private markStruck(piece: KitPieceId, shaped: number, weight: number): void {
     this.recent = [...this.recent.slice(-3), piece];
     this.recentAge = 0;
-    this.pulse = Math.min(1, this.pulse + 0.3 + shaped * 0.4);
-    this.energy = Math.min(1, this.energy + 0.22 + shaped * 0.3);
+    this.pulse = Math.min(1, this.pulse + (0.3 + shaped * 0.4) * weight);
+    this.energy = Math.min(1, this.energy + (0.22 + shaped * 0.3) * weight);
   }
 
   /** Kept for symmetry with the melodic instrument: a drum is a one-shot,
@@ -227,8 +254,9 @@ export class PlayKit {
     this.output.dispose();
   }
 
-  private strike(piece: KitPieceId, velocity: number, octave: number): void {
-    const at = this.times.get(piece)!.next();
+  /** `at` is the schedule time, drawn by the caller: `next()` for a hit that
+   * is happening now, `atLeast()` for one the transport has already placed. */
+  private strike(piece: KitPieceId, velocity: number, octave: number, at: number): void {
     // Pitched pieces sit against the field's root, and the octave the key
     // was in nudges them: playing the same drum higher up the keybed is a
     // tighter version of it, which is how a kit is laid out anyway.
