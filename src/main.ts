@@ -22,7 +22,22 @@ import {
 } from './ui/AppMode';
 import { ModeToggle } from './ui/ModeToggle';
 import { PlayPanel } from './ui/PlayPanel';
+import { KitPanel } from './ui/KitPanel';
+import { StagePanel } from './ui/StagePanel';
 import { PlayController } from './input/PlayController';
+import {
+  hitCount,
+  KIT_PATTERN_PRESETS,
+  loadStoredPattern,
+  patternFromPreset,
+  storePattern,
+} from './audio/KitPattern';
+import { KIT_LAYOUT } from './audio/PlayKit';
+import {
+  defaultPerformance,
+  loadStoredPerformance,
+  storePerformance,
+} from './audio/Performance';
 import { DEFAULT_BLEND_ID, DEFAULT_VOICE_MODE } from './audio/PlayBlend';
 import { DEFAULT_PRESET_ID, findPreset } from './audio/PlayPresets';
 import { VisualModeToggle } from './ui/VisualModeToggle';
@@ -186,6 +201,44 @@ playPanel.setStatus('idle', null);
 // modes, the way it always hid the panel.
 playStage.appendChild(playPanel.element);
 
+// ——— Kit: the loop you build rather than play ———
+// Same centre stage as the instrument, and the same rule: one panel per mode,
+// gated in CSS. The grid is the only surface in the app that *makes*
+// something the engine then plays back, so it owns a pattern and hands it to
+// the sequencer on every edit.
+const kitPanel = new KitPanel(
+  // A first session opens on a groove rather than on 192 empty cells. It is
+  // saved the moment anything is changed, and never before — an untouched
+  // starter pattern is not someone's work, and storing it would mean a
+  // second session could never be given a different one.
+  loadStoredPattern() ?? patternFromPreset(KIT_PATTERN_PRESETS[0]!, 2),
+  {
+    onPattern: (pattern) => {
+      audioEngine.setKitPattern(pattern);
+      storePattern(pattern);
+    },
+    onPlaying: (playing) => audioEngine.setKitLoopPlaying(playing),
+    onAudition: (piece) => {
+      // The kit is laid out by semitone from C, and in Kit mode every key is
+      // a drum — so the row label plays its own piece through exactly the
+      // path a pressed key would take.
+      const note = 60 + KIT_LAYOUT.indexOf(piece);
+      playController.noteOn(note, 0.8);
+      playController.noteOff(note);
+    },
+  },
+);
+audioEngine.setKitPattern(kitPanel.getPattern());
+playStage.appendChild(kitPanel.element);
+
+// ——— Stage: the performance, written down ———
+const stagePanel = new StagePanel(loadStoredPerformance() ?? defaultPerformance(), {
+  onChange: (performance) => storePerformance(performance),
+  onStart: (performance) => audioEngine.startPerformance(performance),
+  onStop: () => audioEngine.stopPerformance(),
+});
+playStage.appendChild(stagePanel.element);
+
 // ——— The phone layout ———
 // Below the width where two rails and a field fit side by side, the rails,
 // the instrument and the mode switch become one bottom sheet with tabs. The
@@ -273,7 +326,14 @@ function setMode(next: AppMode): void {
   controls.setMode(next);
   audioEngine.setMode(next);
   dock.setMode(next);
-  playController.setActive(next === 'play');
+  // The keybed is live wherever there is something to play with it: an
+  // instrument in Play, the kit in Kit — where typing a key auditions a piece
+  // against the grid you are writing.
+  playController.setActive(next === 'play' || next === 'kit');
+  // The engine stops the loop and the set on its way out of their modes; the
+  // panels have to hear about it or their buttons keep claiming otherwise.
+  if (next !== 'kit') kitPanel.setPlaying(false);
+  if (next !== 'stage') stagePanel.setRunning(false);
   if (isDirectMode(next)) {
     // A calibration survives a Drift excursion.
     const stored = loadStoredKnobs();
@@ -292,7 +352,7 @@ audioEngine.setMode(mode);
 // for here — that needs a user gesture — but the computer keybed does not,
 // and without this a session that reopened straight into Play showed the
 // panel and answered nothing typed at it.
-playController.setActive(mode === 'play');
+playController.setActive(mode === 'play' || mode === 'kit');
 // Dev-only handle for driving the page from a headless browser: the mix is
 // the thing that needs verifying and none of it is legible from the DOM, so
 // without this a check like "does a chord actually sit above the bed now"
@@ -365,6 +425,21 @@ function loop(now: number): void {
         audioEngine.getEnsembleDuckDepth(),
         audioEngine.getPlayFollow(),
       );
+    } else if (mode === 'kit') {
+      kitPanel.update(harmonic, audioEngine.getKitSequencer().getDisplayStep(), audioEngine.getBpm());
+    } else if (mode === 'stage') {
+      const performance = audioEngine.getPerformanceState();
+      stagePanel.update(
+        performance.state,
+        performance.position,
+        audioEngine.getBpm(),
+        hitCount(kitPanel.getPattern()),
+      );
+      // A set that ran out gives the button back rather than sitting there
+      // saying Stop over an orchestra that is no longer being conducted.
+      if (performance.state === 'done' || performance.state === 'idle') {
+        stagePanel.setRunning(false);
+      }
     }
     visualScope.update(visualReadout, controls.getKnobs().visual, lastArt, harmonic);
 
@@ -436,9 +511,9 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     toggleRails();
   }
-  // D is a white key in Play mode — the health readout gives it up rather
-  // than firing every time you play an E.
-  if ((e.key === 'd' || e.key === 'D') && mode !== 'play') {
+  // D is a white key wherever the keybed is live — the health readout gives
+  // it up rather than firing every time you play an E.
+  if ((e.key === 'd' || e.key === 'D') && mode !== 'play' && mode !== 'kit') {
     perfMonitor.toggle();
   }
 });

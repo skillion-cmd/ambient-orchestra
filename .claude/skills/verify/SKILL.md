@@ -39,9 +39,9 @@ Flows that matter:
   dial's own `--knob-turn` custom property and `aria-valuenow`. 200px of
   travel is the full 0–1 sweep. A focused dial also takes arrow keys, home
   and end.
-- Mode: the Drift/Calibrate/Play toggle is `#mode-toggle` (three buttons,
-  in that order); body has `data-mode`. Knob persistence writes `ao-knobs`
-  (Calibrate and Play, debounced 500ms).
+- Mode: `#mode-toggle` holds five buttons in order — Drift, Calibrate, Play,
+  Kit, Stage — and body carries `data-mode`. Knob persistence writes
+  `ao-knobs` (every mode but Drift, debounced 500ms).
 - Each rail is two `.rail-section` bands — `.rail-section--readout` (nothing
   in it is pressable; both canvases are `.scope-canvas` with pointer events
   off) and `.rail-section--controls`. The movement row is now text only:
@@ -108,6 +108,54 @@ Flows that matter:
     out from C: `a` is the kick, `d` the snare, `f`/`g` the hats.
   - Restoring `ao-mode: 'play'` from storage arms the keybed on load, so a
     seeded Play session answers typed keys without touching the mode toggle.
+
+- Kit mode (`.kit-panel`, in the same `#play-stage` as the instrument — one
+  panel per mode, gated in CSS, so assert on the panel and not on the stage):
+  - The grid is `.kit-grid-row` (12, in drum-machine order: ride at the top,
+    kick at the bottom) each holding a `.kit-piece` label button and 16
+    `.kit-cell`s. A cell cycles silent → `is-on` → `is-on is-accent` →
+    silent on successive clicks, and its `aria-label` says which
+    (`Ride, bar 1 step 2: accent`). Shift-clicking a `.kit-piece` clears
+    that row; clicking it auditions the piece.
+  - `.kit-bars button` is the 2 / 4 / 8 loop length and `.kit-pages button`
+    the bar pager — note both rows open with a `.kit-row-label` span, so the
+    first *button* is `:nth-child(2)`. Growing the loop tiles: after 2 → 8,
+    bar 5 holds what bar 1 holds. The pager does not follow the playhead; the
+    bar being played carries `is-sounding` instead.
+  - `.kit-play` starts the loop. `.kit-cell.is-playhead` is the sounding
+    column and is only drawn on the bar being edited, so a check for it has
+    to poll until the playhead reaches that page (12 cells when it does).
+    `window.__ao.getKitSequencer().getDisplayStep()` is the same number
+    without the DOM, and `isKitLoopPlaying()` the state.
+  - The pattern persists to `ao-kit` (`{bars, rows: {piece: "0102…"}}`, one
+    digit per step, silent rows omitted) and seeds cleanly via
+    `addInitScript`. A first session with nothing stored opens on the Four
+    preset rather than an empty grid.
+  - The keybed stays live in Kit and strikes the kit whatever Play's own
+    Melody/Beat is set to — `getPlayVoiceMode()` still reports what Play was
+    left on, while `getPlaySounding()` returns piece names.
+
+- Stage mode (`.stage-panel`, same stage):
+  - `.stage-cue` cards, each with two `select`s (phase then length — the
+    length one is `.stage-select:nth-of-type(2)`), five `.stage-layer`
+    toggles, a `.stage-kit` toggle and four `.stage-cue-tools` buttons
+    (↑ ↓ duplicate remove, in that order). `.stage-add` appends.
+    `.stage-cue.is-live` is the cue being heard.
+  - `.stage-start` runs the set; `.stage-status` says where it has got to
+    (`starting on the next bar` → `cue 2 of 4 — Bloom, 3 bars left`), and
+    `.stage-total` the length. The set persists to `ao-stage`.
+  - `window.__ao.getPerformanceState()` gives `{state, position}` without the
+    DOM, and `getTransportBar()` the bar it counts in. Cue boundaries land on
+    bar lines: sampling that inside the page (a `setInterval` pushing to an
+    array, read back in one `evaluate`) is the only way to measure them —
+    driving the sampling from Node adds seconds of round-trip lag to a heavy
+    WebGL page and makes correct timings look wrong.
+  - `startFresh: 'night'|'open'` makes the set wait for a requested piece
+    before its first cue — allow ~15s for the dissolve bridge, and expect
+    `getHarmonicContext().movementIndex` to change at the moment it opens.
+  - A cue's layer mask multiplies the bus gains, so a cue that drops the pads
+    shows up as `padBus.gain.value` near 0.06 of where it was, and the buses
+    come back when the set is stopped.
 
 ### Verifying the mix, not just the DOM
 
@@ -190,9 +238,9 @@ a fresh switch looks empty.
 ## Gotchas
 
 - `/favicon.ico` 404s in the console — pre-existing, ignore.
-- `D` toggles the PerfMonitor in Drift and Calibrate only: in Play it is a
-  white key, and the shortcut stands down rather than firing every time you
-  play an E. Note also that `.perf-monitor` is an empty zero-height div until
+- `D` toggles the PerfMonitor everywhere but Play and Kit: in both of those
+  it is a white key, and the shortcut stands down rather than firing every
+  time you play an E. Note also that `.perf-monitor` is an empty zero-height div until
   a frame writes into it, so assert on its presence, not `isVisible`.
 - The left rail's `.rail-data` scrolls (`min-height: 0; overflow-y: auto`) so
   a tall panel can't walk the knob grid off the bottom. An element below the

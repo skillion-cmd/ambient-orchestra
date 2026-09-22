@@ -61,7 +61,10 @@ body {
 .dock-collapse,
 .piece-picker-btn,
 .readout-action,
-.play-panel button {
+.play-panel button,
+.kit-panel button,
+.stage-panel button,
+.stage-panel select {
   font-family: inherit;
   font-size: 9px;
   letter-spacing: 0.1em;
@@ -80,7 +83,10 @@ body {
 .dock-collapse:hover:not(:disabled),
 .piece-picker-btn:hover:not(:disabled),
 .readout-action:hover:not(:disabled),
-.play-panel button:hover:not(:disabled) {
+.play-panel button:hover:not(:disabled),
+.kit-panel button:hover:not(:disabled),
+.stage-panel button:hover:not(:disabled),
+.stage-panel select:hover:not(:disabled) {
   color: var(--ao-text);
   border-color: color-mix(in srgb, var(--ao-text) 46%, transparent);
   background: color-mix(in srgb, var(--ao-text) 8%, transparent);
@@ -92,7 +98,9 @@ body {
 .dock-collapse:active:not(:disabled),
 .piece-picker-btn:active:not(:disabled),
 .readout-action:active:not(:disabled),
-.play-panel button:active:not(:disabled) {
+.play-panel button:active:not(:disabled),
+.kit-panel button:active:not(:disabled),
+.stage-panel button:active:not(:disabled) {
   background: color-mix(in srgb, var(--ao-text) 18%, transparent);
 }
 
@@ -100,7 +108,9 @@ body {
 .mode-toggle button.is-active,
 .dock-tabs button.is-active,
 .piece-picker-btn.is-active,
-.play-panel button.is-active {
+.play-panel button.is-active,
+.kit-panel button.is-active,
+.stage-panel button.is-active {
   color: var(--ao-text);
   border-color: color-mix(in srgb, var(--ao-text) 55%, transparent);
   background: color-mix(in srgb, var(--ao-text) 12%, transparent);
@@ -110,7 +120,9 @@ body {
 .mode-toggle button:disabled,
 .piece-picker-btn:disabled,
 .readout-action:disabled,
-.play-panel button:disabled {
+.play-panel button:disabled,
+.kit-panel button:disabled,
+.stage-panel button:disabled {
   opacity: 0.32;
   cursor: default;
 }
@@ -682,7 +694,7 @@ body[data-mode='play'] .piece-picker {
   border-color: color-mix(in srgb, var(--ao-text) 45%, transparent);
 }
 
-/* ——— Play stage (Play only) ——— */
+/* ——— The centre stage (Play, Kit and Stage) ——— */
 /* The instrument stands in the middle of the screen, above the mode switch
    and clear of both rails. It lived in the left rail first, under the
    readouts, which is where a *readout* belongs — but this is the one
@@ -694,11 +706,19 @@ body[data-mode='calibrate'] .play-stage {
   display: none;
 }
 
+/* Three modes share the stage, one panel each. Same DOM, same rule the piece
+   picker follows: the panel for the mode you are in, and nothing else. */
+body:not([data-mode='play']) .play-panel,
+body:not([data-mode='kit']) .kit-panel,
+body:not([data-mode='stage']) .stage-panel {
+  display: none;
+}
+
 .play-stage {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  /* Above the Drift/Calibrate/Play switch, which stays reachable. */
+  /* Above the mode switch, which stays reachable. */
   bottom: 52px;
   /* Wide enough for a keyboard you can actually hit, and never so wide it
      reaches under a rail: the rails are 268px each. */
@@ -1053,6 +1073,292 @@ body[data-mode='calibrate'] .play-stage {
   }
 }
 
+/* ——— The kit grid (Kit mode) ———
+
+   Twelve rows of sixteen cells. Everything in here is sized from the row,
+   not from the cell: the steps share whatever width is left after the piece
+   labels, so the same grid works at the stage's 760px and inside a phone
+   sheet without a second set of numbers. */
+.kit-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kit-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.kit-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.kit-row-label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ao-text-muted);
+  margin-right: 2px;
+}
+
+.kit-panel .kit-bars button,
+.kit-panel .kit-pages button {
+  min-width: 26px;
+  padding: 5px 6px;
+}
+
+.kit-panel .kit-presets button {
+  padding: 5px 8px;
+}
+
+.kit-play {
+  padding: 6px 14px;
+}
+
+/* The loop is running: the one control in the panel that is a state rather
+   than a choice, so it holds the same treatment an active toggle has. */
+.kit-panel .kit-play.is-playing {
+  color: var(--ao-text);
+  border-color: color-mix(in srgb, var(--ao-text) 55%, transparent);
+  background: color-mix(in srgb, var(--ao-text) 12%, transparent);
+}
+
+/* The bar the loop is actually in, as against the bar you are editing. The
+   pager never follows the playhead — see `syncPageMarker` — so this is how
+   you know where it has got to. */
+.kit-panel .kit-pages button.is-sounding {
+  border-color: color-mix(in srgb, var(--ao-text) 70%, transparent);
+  color: var(--ao-text);
+}
+
+.kit-count,
+.kit-key {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--ao-text-muted);
+}
+
+.kit-count {
+  flex: 1 1 auto;
+  text-align: right;
+}
+
+.kit-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kit-grid-row {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.kit-panel .kit-piece {
+  flex: 0 0 56px;
+  padding: 0 4px;
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  text-align: left;
+  border-color: transparent;
+  background: none;
+}
+
+.kit-steps {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kit-panel .kit-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 18px;
+  padding: 0;
+  border-radius: 1px;
+  border-color: color-mix(in srgb, var(--ao-text) 14%, transparent);
+  background: color-mix(in srgb, var(--ao-text) 3%, transparent);
+}
+
+/* The quarter notes, marked. Sixteen identical boxes is how every hit lands
+   a step away from where it was meant to. */
+.kit-panel .kit-cell.is-beat {
+  border-color: color-mix(in srgb, var(--ao-text) 28%, transparent);
+}
+
+.kit-panel .kit-cell.is-on {
+  background: color-mix(in srgb, var(--ao-text) 42%, transparent);
+  border-color: color-mix(in srgb, var(--ao-text) 52%, transparent);
+}
+
+/* An accent is the same cell, harder. It has to be legible at a glance from
+   the hit next to it — that difference is the groove. */
+.kit-panel .kit-cell.is-accent {
+  background: var(--ao-text);
+  border-color: var(--ao-text);
+}
+
+/* The column sounding right now, on the bar being edited. An outline rather
+   than a fill: the cells underneath it are carrying the pattern, and a
+   playhead that repaints them hides what it is playing. */
+.kit-panel .kit-cell.is-playhead {
+  outline: 1px solid color-mix(in srgb, var(--ao-text) 70%, transparent);
+  outline-offset: 1px;
+}
+
+/* ——— The set list (Stage mode) ——— */
+.stage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stage-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stage-start {
+  padding: 6px 14px;
+}
+
+.stage-panel .stage-start.is-running {
+  color: var(--ao-text);
+  border-color: color-mix(in srgb, var(--ao-text) 55%, transparent);
+  background: color-mix(in srgb, var(--ao-text) 12%, transparent);
+}
+
+.stage-status,
+.stage-total {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--ao-text-muted);
+}
+
+.stage-status {
+  flex: 1 1 auto;
+  text-align: right;
+}
+
+.stage-status.is-live {
+  color: var(--ao-text);
+}
+
+.stage-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.stage-row-label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ao-text-muted);
+  margin: 0 2px 0 8px;
+}
+
+.stage-panel .stage-options button {
+  padding: 5px 8px;
+}
+
+.stage-cues {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* A cue is a card rather than a row: five layer toggles and four tools do
+   not fit on one line at this width, and folding them onto a second line
+   inside a bordered box keeps it obvious which controls belong to which
+   stretch of bars. */
+.stage-cue {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 7px;
+  border: 1px solid var(--ao-border);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ao-text) 2%, transparent);
+}
+
+/* The cue you are hearing. */
+.stage-cue.is-live {
+  border-color: color-mix(in srgb, var(--ao-text) 55%, transparent);
+  background: color-mix(in srgb, var(--ao-text) 8%, transparent);
+}
+
+.stage-cue-top,
+.stage-cue-bottom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.stage-cue-index {
+  flex: 0 0 16px;
+  font-size: 9px;
+  color: var(--ao-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stage-panel select {
+  padding: 5px 6px;
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+
+.stage-cue-tools {
+  display: flex;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.stage-panel .stage-cue-tools button {
+  min-width: 24px;
+  padding: 4px 5px;
+}
+
+.stage-panel .stage-layer,
+.stage-panel .stage-kit {
+  padding: 4px 7px;
+}
+
+/* The loop toggle answers a different question from the five layer toggles
+   beside it — those are the orchestra, this is your own loop — so it stands
+   apart rather than reading as a sixth layer. */
+.stage-panel .stage-kit {
+  margin-left: 8px;
+}
+
+.stage-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stage-add {
+  padding: 6px 12px;
+}
+
+.stage-total {
+  flex: 1 1 auto;
+  text-align: right;
+}
+
 /* ——— A finger, at any width ———
 
    Independent of the layout: a touchscreen laptop needs the bigger targets
@@ -1069,9 +1375,19 @@ body[data-mode='calibrate'] .play-stage {
   .dock-collapse,
   .piece-picker-btn,
   .readout-action,
-  .play-panel button:not(.play-key-cap) {
+  .play-panel button:not(.play-key-cap),
+  .kit-panel button:not(.kit-cell),
+  .stage-panel button,
+  .stage-panel select {
     min-height: 34px;
     padding-block: 8px;
+  }
+
+  /* A step cell is one of sixteen across a row — it takes the height a
+     finger needs and gets its width from the row, which is the only way
+     sixteen of them are hittable at all. */
+  .kit-panel .kit-cell {
+    height: 30px;
   }
 
   .play-octave button {
@@ -1226,11 +1542,14 @@ body[data-mode='calibrate'] .play-stage {
     max-width: 92px;
   }
 
-  /* One panel at a time — whichever the tabs chose. */
-  body[data-panel='visual'] .rail-left,
-  body[data-panel='audio'] .rail-right,
-  body[data-panel='play'] .rail-left,
-  body[data-panel='play'] .rail-right,
+  /* One panel at a time — whichever the tabs chose.
+
+     Written as "hide unless this is your tab" rather than as a list of the
+     pairings, because the centre stage now holds three panels — the
+     instrument, the kit grid and the set list — each with a tab of its own,
+     and a list would need a new line for every one of them. */
+  body[data-panel]:not([data-panel='audio']) .rail-left,
+  body[data-panel]:not([data-panel='visual']) .rail-right,
   body[data-panel='audio'] .play-stage,
   body[data-panel='visual'] .play-stage {
     display: none;
@@ -1247,6 +1566,28 @@ body[data-mode='calibrate'] .play-stage {
     /* The stage's own chrome belonged to a floating card; the sheet has it
        now. */
     padding: 0;
+  }
+
+  /* Sixteen cells and a label in 390px: the label gives up what it can, and
+     the cells take it. Below this the grid would need a horizontal scroller,
+     and a loop you have to scroll to see is not a loop you can read. */
+  .kit-panel .kit-piece {
+    flex: 0 0 40px;
+    font-size: 7px;
+    letter-spacing: 0;
+  }
+
+  .kit-steps {
+    gap: 1px;
+  }
+
+  /* A set can run to a dozen cues; the sheet scrolls, and the head stays. */
+  .stage-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding-bottom: 6px;
+    background: var(--ao-bg);
   }
 
   /* Web MIDI barely exists on a phone, and the learn grid is eight cells

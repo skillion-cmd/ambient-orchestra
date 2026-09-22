@@ -7,6 +7,7 @@ import type {
   MovementCharacter,
   HarmonicContext,
   MelodyPhraseType,
+  MovementPhase,
   SoundKnobs,
   VoiceGroup,
 } from './types';
@@ -811,6 +812,30 @@ export class Conductor {
     const ctx = this.getHarmonicContext();
     this.onPhaseChange(ctx, this.harmonicField.getMelodyPresence());
     this.lastPhase = next;
+  }
+
+  /**
+   * Go to a named phase, now.
+   *
+   * `requestNextPhase` walks the timeline one segment at a time, which is the
+   * right shape for a nudge and the wrong one for a written performance: a
+   * cue says *bloom*, not "two phases along from wherever we happen to be".
+   * Same machinery underneath — the field's own jump, followed by the phase
+   * change the update loop would have fired a moment later.
+   *
+   * A timeline that has no segment of the asked-for phase — a fragment's
+   * compressed arc carries four of the six — leaves the piece where it is
+   * rather than firing a change that didn't happen. The cue's other half, the
+   * layers it puts in the room, still applies.
+   */
+  goToPhase(phase: MovementPhase): void {
+    if (!this.started || this.pendingMovementSkip) return;
+    if (this.getHarmonicContext().movementPhase === phase) return;
+    if (this.harmonicField.jumpToPhase(phase) !== phase) return;
+
+    const ctx = this.getHarmonicContext();
+    this.onPhaseChange(ctx, this.harmonicField.getMelodyPresence());
+    this.lastPhase = phase;
   }
 
   requestNextMovement(): void {
