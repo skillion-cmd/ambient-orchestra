@@ -59,6 +59,48 @@ export const KIT_LABELS: Record<KitPieceId, string> = {
   sub: 'Sub',
 };
 
+/**
+ * Output weight per piece, applied to the shaped velocity.
+ *
+ * Every piece here is a raw Tone drum synth — a MembraneSynth or a filtered
+ * NoiseSynth — and those are voiced to be the loudest thing in a patch. At
+ * velocity 1 and no trim a single played kick measured -0.4dBFS at this
+ * kit's own output, a tom -0.1, an open hat -2.5: one finger, full scale,
+ * before the bus gain that is supposed to place it in a mix. Six pieces
+ * together reached +7dBFS, and the ensemble it is played over sits around
+ * -25. That is not a kit in a room, it is a drum machine plugged into the
+ * wrong socket, and it is what made Beat mode clip.
+ *
+ * These are measured trims, not guesses: each one lands a hard hit at the
+ * weight its role wants against the others — the kick and the sub carry, the
+ * toms sit just under them, the backbeat answers, and the hats, shaker and
+ * ride are texture rather than events. A hard one-hand groove now peaks around
+ * -6dBFS at this output and -9 at the speakers, which puts it in front of the
+ * ensemble, where playing should be, and nowhere near the ceiling.
+ */
+const KIT_LEVELS: Record<KitPieceId, number> = {
+  kick: 0.44,
+  sub: 0.4,
+  snare: 0.65,
+  clap: 0.74,
+  tomLow: 0.31,
+  tomMid: 0.3,
+  hatClosed: 0.13,
+  hatOpen: 0.127,
+  shaker: 0.45,
+  ride: 0.034,
+  rim: 0.68,
+  crackle: 0.86,
+};
+
+/**
+ * The ride's fundamental. MetalSynth builds six inharmonic partials as ratios
+ * of it, and 200Hz is where the TR-808 cymbal model it comes from is voiced:
+ * high enough that those partials carry the body of the sound up past the
+ * 5.2kHz resonance, low enough that it rings like a cymbal rather than hissing.
+ */
+const RIDE_HZ = 200;
+
 export function kitPieceFor(midiNote: number): KitPieceId {
   const index = ((midiNote % 12) + 12) % 12;
   return KIT_LAYOUT[index]!;
@@ -193,42 +235,58 @@ export class PlayKit {
     const root = this.ctx?.rootMidi ?? 45;
     const bump = Math.max(-1, Math.min(2, octave)) * 3;
 
+    // Balance and headroom in one number per piece — see `KIT_LEVELS`. The
+    // velocity shapes below are the piece's *dynamics*: a kick and a sub keep
+    // a floor under theirs because a drum that vanishes on a soft touch reads
+    // as a dropped hit rather than a quiet one.
+    const level = KIT_LEVELS[piece];
+
     switch (piece) {
       case 'kick':
-        this.kick?.triggerAttack(midi(root - 12 + bump), at, 0.7 + velocity * 0.3);
+        this.kick?.triggerAttack(midi(root - 12 + bump), at, (0.7 + velocity * 0.3) * level);
         break;
       case 'sub':
-        this.sub?.triggerAttack(midi(root - 12 + bump), at, 0.6 + velocity * 0.35);
+        this.sub?.triggerAttack(midi(root - 12 + bump), at, (0.6 + velocity * 0.35) * level);
         break;
       case 'tomLow':
-        this.tom?.triggerAttack(midi(root + bump), at, velocity);
+        this.tom?.triggerAttack(midi(root + bump), at, velocity * level);
         break;
       case 'tomMid':
-        this.tom?.triggerAttack(midi(root + 7 + bump), at, velocity);
+        this.tom?.triggerAttack(midi(root + 7 + bump), at, velocity * level);
         break;
       case 'rim':
-        this.rim?.triggerAttack(midi(root + 24), at, velocity * 0.8);
+        this.rim?.triggerAttack(midi(root + 24), at, velocity * level);
         break;
       case 'snare':
-        this.snare?.triggerAttack(at, velocity);
+        this.snare?.triggerAttack(at, velocity * level);
         break;
       case 'clap':
-        this.clap?.triggerAttack(at, velocity * 0.9);
+        this.clap?.triggerAttack(at, velocity * level);
         break;
       case 'hatClosed':
-        this.hatClosed?.triggerAttack(at, velocity * 0.55);
+        this.hatClosed?.triggerAttack(at, velocity * level);
         break;
       case 'hatOpen':
-        this.hatOpen?.triggerAttack(at, velocity * 0.5);
+        this.hatOpen?.triggerAttack(at, velocity * level);
         break;
       case 'shaker':
-        this.shaker?.triggerAttack(at, velocity * 0.5);
+        this.shaker?.triggerAttack(at, velocity * level);
         break;
       case 'ride':
-        this.ride?.triggerAttack(at, velocity * 0.3);
+        // Three arguments, not two.
+        //
+        // MetalSynth is a Monophonic, so its `triggerAttack` is
+        // `(note, time, velocity)` — the same shape the kick and the toms use
+        // — while every noise piece above it is an Instrument, whose signature
+        // is `(time, velocity)`. Called with two arguments this read the
+        // schedule time as a pitch and the velocity as an absolute time, which
+        // put the whole envelope somewhere in the first second of the audio
+        // context: by the time anyone pressed the key the hit had been over
+        // for minutes. Hence a ride that made no sound at all.
+        this.ride?.triggerAttack(RIDE_HZ, at, velocity * level);
         break;
       case 'crackle':
-        this.crackle?.triggerAttack(at, velocity * 0.6);
+        this.crackle?.triggerAttack(at, velocity * level);
         break;
     }
   }
@@ -301,6 +359,13 @@ export class PlayKit {
       resonance: 5200,
       octaves: 1.4,
     }).connect(this.rideFilter);
+    // MetalSynth is also the one instrument in Tone with no default pitch:
+    // `getDefaults()` merges Monophonic's — detune, portamento, no frequency —
+    // and the constructor then builds its frequency Signal with no value, so
+    // it starts at 0Hz with all six FM oscillators at DC. Every strike passes
+    // `RIDE_HZ` anyway; this is so the synth is not sitting silent between
+    // being built and first being played.
+    this.ride.frequency.value = RIDE_HZ;
 
     this.crackleFilter = new Tone.Filter(2600, 'bandpass', -12).connect(this.output);
     this.crackle = new Tone.NoiseSynth({

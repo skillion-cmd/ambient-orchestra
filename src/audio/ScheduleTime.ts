@@ -54,12 +54,27 @@ export class ScheduleTime {
    * hits at the transport time it was handed, plus swing and per-step nudges.
    * Those offsets are drawn independently of the gap between steps, and a
    * tempo move can shrink the gap under the offsets, so two hits on one drum
-   * can invert. Anchoring to `now` instead would be worse than the throw: it
-   * would collapse the groove onto the present. This keeps the requested time
-   * whenever it is usable and only nudges the ones that would go backwards.
+   * can invert. This keeps the requested time whenever it is usable and only
+   * nudges the ones that would go backwards.
+   *
+   * The clock is a floor as well as the last event, which looks like the
+   * "collapse the groove onto the present" this was written to avoid and
+   * isn't, because Tone collapses it anyway: `Source.start` runs every time
+   * through `Math.max(time, context.currentTime)` before it does anything
+   * with it. So a hit requested in the past is already being played now —
+   * the only question is whether this object knows that. Without the floor it
+   * doesn't: it records the past time, hands back `last + a tenth of a
+   * millisecond` for the next hit, that is still in the past, Tone clamps
+   * both to the same `currentTime`, and the second one throws "Start time
+   * must be strictly greater than previous start time" — out in the
+   * transport's tick, where nothing catches it, so every event still queued
+   * behind it in that tick is dropped too. One late transport callback took
+   * out the rest of the bar. A stalled main thread is what puts the requested
+   * time in the past, which is why it showed up under load and not on a quiet
+   * machine.
    */
   atLeast(requestedSec: number): number {
-    const time = Math.max(requestedSec, this.last + MIN_EVENT_GAP_SEC);
+    const time = Math.max(requestedSec, this.clock(), this.last + MIN_EVENT_GAP_SEC);
     this.last = time;
     return time;
   }

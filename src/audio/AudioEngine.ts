@@ -7,6 +7,7 @@ import { DEFAULT_KNOBS } from './types';
 import { NEUTRAL_PRESENCE, type LayerPresence } from './LayerPresence';
 import type { ConductorDirectives } from './ConductorSkill';
 import type { PieceRequest } from './HarmonicField';
+import { createCeiling, createLimiter } from './Ceiling';
 import { RoomWalk } from './RoomWalk';
 import { NeighbourRoom } from './NeighbourRoom';
 import { PlayInstrument } from './PlayInstrument';
@@ -108,11 +109,11 @@ export class AudioEngine {
   /** Movement index whose end-of-piece crossing has already been cued. */
   private forcedForMovement = -1;
   private readonly playBus: Tone.Gain;
-  private readonly playLimiter: Tone.Limiter;
+  private readonly playLimiter: Tone.Compressor;
   private readonly playInstrument: PlayInstrument;
   /** The kit under your hands in Beat mode — its own dry path, see below. */
   private readonly playKitBus: Tone.Gain;
-  private readonly playKitLimiter: Tone.Limiter;
+  private readonly playKitLimiter: Tone.Compressor;
   private readonly playKitSend: Tone.Gain;
   private readonly playKit: PlayKit;
   private voiceMode: PlayVoiceMode = DEFAULT_VOICE_MODE;
@@ -134,9 +135,11 @@ export class AudioEngine {
   /** Instrument bus level as of the last write — see `applyPlayLevel`. */
   private lastPlayLevel = -1;
   private readonly analyser: Tone.Analyser;
-  private readonly limiter: Tone.Limiter;
-  private readonly subLimiter: Tone.Limiter;
-  private readonly pulseLimiter: Tone.Limiter;
+  private readonly limiter: Tone.Compressor;
+  /** The static ceiling after the limiter — see `createCeiling`. */
+  private readonly ceiling: Tone.WaveShaper;
+  private readonly subLimiter: Tone.Compressor;
+  private readonly pulseLimiter: Tone.Compressor;
   private readonly voices;
   readonly conductor: Conductor;
   private knobs: AppKnobs = {
@@ -205,7 +208,8 @@ export class AudioEngine {
     // that is meant to be heard (36Hz), so it takes only what nothing was
     // going to reproduce.
     this.rumble = new Tone.Filter(30, 'highpass', -24);
-    this.limiter = new Tone.Limiter(-2);
+    this.limiter = createLimiter(-2);
+    this.ceiling = createCeiling();
     this.analyser = new Tone.Analyser('fft', 512);
 
     this.padBus.connect(this.chorus);
@@ -229,7 +233,10 @@ export class AudioEngine {
     this.widener.connect(this.tiltEQ);
     this.tiltEQ.connect(this.rumble);
     this.rumble.connect(this.limiter);
-    this.limiter.connect(this.analyser);
+    this.limiter.connect(this.ceiling);
+    // The analyser sits after the ceiling so the visual side is reading what
+    // actually left, not what the chain would have sent if nothing stopped it.
+    this.ceiling.connect(this.analyser);
     this.analyser.toDestination();
 
     // Dry sub path: joins at the tilt EQ, bypassing the 90Hz highpass (which
@@ -239,7 +246,7 @@ export class AudioEngine {
     // the whole mix. Still hits the warmth tilt, the master limiter, and the
     // analyser so the visualizer's bass band sees the pressure.
     this.subBus = new Tone.Gain(0.42);
-    this.subLimiter = new Tone.Limiter(-8);
+    this.subLimiter = createLimiter(-8);
     this.subBus.connect(this.subLimiter);
     this.subLimiter.connect(this.tiltEQ);
 
@@ -249,7 +256,7 @@ export class AudioEngine {
     // its own limiter. A small parallel send into the reverb keeps it
     // sitting in the room rather than pasted on top of it.
     this.pulseBus = new Tone.Gain(0.8);
-    this.pulseLimiter = new Tone.Limiter(-6);
+    this.pulseLimiter = createLimiter(-6);
     this.pulseBus.connect(this.pulseLimiter);
     this.pulseLimiter.connect(this.tiltEQ);
     this.pulseSend = new Tone.Gain(0.12);
@@ -285,7 +292,7 @@ export class AudioEngine {
       release: 0.24,
       knee: 10,
     });
-    this.playLimiter = new Tone.Limiter(-6);
+    this.playLimiter = createLimiter(-6);
     this.playBus.connect(this.playGlue);
     this.playGlue.connect(this.playLimiter);
     this.playLimiter.connect(this.highpass);
@@ -300,7 +307,7 @@ export class AudioEngine {
     // Sitting where the Conductor's kit sits is also what makes the two read
     // as one kit being shared rather than as a drum machine over a piece.
     this.playKitBus = new Tone.Gain(0);
-    this.playKitLimiter = new Tone.Limiter(-6);
+    this.playKitLimiter = createLimiter(-6);
     this.playKitBus.connect(this.playKitLimiter);
     this.playKitLimiter.connect(this.tiltEQ);
     this.playKitSend = new Tone.Gain(0.1);
