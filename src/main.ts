@@ -117,7 +117,11 @@ const storedPlay = loadStoredPlayState();
 const playPanel = new PlayPanel(
   {
     presetId: findPreset(storedPlay?.presetId ?? DEFAULT_PRESET_ID).id,
-    tuning: storedPlay?.tuning ?? 'scale',
+    // Chromatic by default. The panel draws a piano, and the first thing a
+    // player does with a drawn piano is check that a key sounds the note
+    // written on it. In-key is the aid, one click away, and it is now honest
+    // enough to be one — but the unaided instrument has to be literal.
+    tuning: storedPlay?.tuning ?? 'chromatic',
     octaveShift: storedPlay?.octaveShift ?? 0,
     blend: storedPlay?.blend ?? DEFAULT_BLEND_ID,
     voiceMode: storedPlay?.voiceMode ?? DEFAULT_VOICE_MODE,

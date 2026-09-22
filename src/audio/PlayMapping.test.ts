@@ -2,15 +2,21 @@ import { describe, expect, it } from 'vitest';
 import {
   degreeForSounded,
   isBlackKey,
+  isInScale,
   mapPlayNote,
   midiToNoteName,
-  REFERENCE_MIDI,
+  snapOffset,
 } from './PlayMapping';
 import { MODE_SCALES } from './types';
 import type { HarmonicContext } from './types';
 
 function ctx(mode: string, rootMidi = 60): HarmonicContext {
   return { scale: MODE_SCALES[mode]!, rootMidi } as HarmonicContext;
+}
+
+/** Pitch classes of a mode, folded into an octave the way the mapper does. */
+function members(mode: string): Set<number> {
+  return new Set(MODE_SCALES[mode]!.map((s) => ((s % 12) + 12) % 12));
 }
 
 describe('PlayMapping', () => {
@@ -27,75 +33,95 @@ describe('PlayMapping', () => {
     expect(mapPlayNote(60, c, 'chromatic', -2)).toBe(36);
   });
 
-  it('middle C sounds the root of the current field, in playing register', () => {
-    // rootMidi is the field's bass; the instrument voices two octaves up,
-    // where the melodic voices sit.
-    expect(mapPlayNote(REFERENCE_MIDI, ctx('lydian', 65), 'scale')).toBe(65 + 24);
-    expect(mapPlayNote(REFERENCE_MIDI, ctx('dreamMinor', 51), 'scale')).toBe(51 + 24);
-  });
-
-  it('keeps the two tunings within an octave of each other on the same key', () => {
-    // Flipping the toggle should change what note you get, not what register
-    // you are playing in.
-    const c = ctx('lydian', 48);
-    for (const key of [60, 64, 67, 72]) {
-      const scaled = mapPlayNote(key, c, 'scale');
-      const chromatic = mapPlayNote(key, c, 'chromatic');
-      expect(Math.abs(scaled - chromatic)).toBeLessThanOrEqual(12);
-    }
-  });
-
-  it('white keys walk the scale degrees in order', () => {
-    const c = ctx('lydian', 60);
-    // C D E F G A B — seven white keys, seven degrees of lydian.
-    const whites = [60, 62, 64, 65, 67, 69, 71];
-    expect(whites.map((n) => mapPlayNote(n, c, 'scale'))).toEqual(
-      MODE_SCALES.lydian!.map((s) => 84 + s),
-    );
-  });
-
-  it('wraps into the next octave past the end of a five-note scale', () => {
-    const c = ctx('pentatonic', 60);
-    const scale = MODE_SCALES.pentatonic!;
-    // The sixth white key is degree 5 — the root an octave up.
-    expect(mapPlayNote(69, c, 'scale')).toBe(84 + scale[0]! + 12);
-    expect(mapPlayNote(71, c, 'scale')).toBe(84 + scale[1]! + 12);
-  });
-
-  it('wraps downward below the reference key', () => {
-    const c = ctx('pentatonic', 60);
-    const scale = MODE_SCALES.pentatonic!;
-    // B below middle C is degree -1 — the top of the scale, an octave down.
-    expect(mapPlayNote(59, c, 'scale')).toBe(84 + scale[scale.length - 1]! - 12);
-  });
-
-  it('every white key lands on a member of the current scale', () => {
-    for (const [name, scale] of Object.entries(MODE_SCALES)) {
-      const c = ctx(name, 45);
+  // The whole point of the drawn piano: a key means the pitch written on it.
+  it('sounds a key at its own pitch whenever it is in the field key', () => {
+    for (const [name] of Object.entries(MODE_SCALES)) {
+      const c = ctx(name, 46);
+      const inKey = members(name);
       for (let note = 36; note <= 96; note++) {
-        if (isBlackKey(note)) continue;
-        const sounded = mapPlayNote(note, c, 'scale');
-        const interval = ((sounded - 45) % 12 + 12) % 12;
-        const members = new Set(scale.map((s) => ((s % 12) + 12) % 12));
-        expect(members.has(interval), `${name} key ${note} → ${sounded}`).toBe(true);
+        if (!inKey.has(((note - 46) % 12 + 12) % 12)) continue;
+        expect(mapPlayNote(note, c, 'scale'), `${name} key ${note}`).toBe(note);
       }
     }
   });
 
-  it('black keys sit a semitone above their white neighbour', () => {
-    const c = ctx('lydian', 60);
-    expect(mapPlayNote(61, c, 'scale')).toBe(mapPlayNote(60, c, 'scale') + 1);
-    expect(mapPlayNote(66, c, 'scale')).toBe(mapPlayNote(65, c, 'scale') + 1);
+  it('never moves a note more than a semitone in a seven-note mode', () => {
+    for (const name of ['lydian', 'major7', 'dreamMinor', 'tropicalBright']) {
+      const c = ctx(name, 46);
+      for (let note = 36; note <= 96; note++) {
+        const moved = Math.abs(mapPlayNote(note, c, 'scale') - note);
+        expect(moved, `${name} key ${note}`).toBeLessThanOrEqual(1);
+      }
+    }
   });
 
-  it('scale tuning is monotonic across the keybed', () => {
-    const c = ctx('major7', 62);
-    let previous = -1;
-    for (let note = 36; note <= 96; note++) {
-      const sounded = mapPlayNote(note, c, 'scale');
-      expect(sounded).toBeGreaterThan(previous);
-      previous = sounded;
+  // The report that started this: in B♭ dreamMinor the old mapping walked
+  // scale degrees, so the key drawn as B♭ sounded a G a fifth away.
+  it('sounds B flat on the B flat key when B flat is in the field key', () => {
+    const c = ctx('dreamMinor', 46); // B♭ dreamMinor
+    expect(midiToNoteName(mapPlayNote(70, c, 'scale'))).toBe('A#4');
+    expect(midiToNoteName(mapPlayNote(60, c, 'scale'))).toBe('C4');
+  });
+
+  it('moves an out-of-key note to the nearest note that is in key', () => {
+    const c = ctx('lydian', 60); // C lydian — F# is in, F natural is not.
+    expect(mapPlayNote(66, c, 'scale')).toBe(66);
+    expect(mapPlayNote(65, c, 'scale')).toBe(64);
+  });
+
+  it('every key lands on a member of the current scale', () => {
+    for (const [name] of Object.entries(MODE_SCALES)) {
+      const c = ctx(name, 45);
+      const inKey = members(name);
+      for (let note = 36; note <= 96; note++) {
+        const sounded = mapPlayNote(note, c, 'scale');
+        const interval = ((sounded - 45) % 12 + 12) % 12;
+        expect(inKey.has(interval), `${name} key ${note} → ${sounded}`).toBe(true);
+      }
     }
+  });
+
+  it('stays in the octave you played in', () => {
+    // The tuning toggle changes which notes are reachable, not which register
+    // your hands are standing in.
+    for (const [name] of Object.entries(MODE_SCALES)) {
+      const c = ctx(name, 43);
+      for (let note = 36; note <= 96; note++) {
+        const drift = Math.abs(mapPlayNote(note, c, 'scale') - note);
+        expect(drift, `${name} key ${note}`).toBeLessThanOrEqual(6);
+      }
+    }
+  });
+
+  it('applies the octave shift in scale tuning too', () => {
+    const c = ctx('lydian', 62);
+    for (const note of [60, 64, 67]) {
+      expect(mapPlayNote(note, c, 'scale', 1)).toBe(mapPlayNote(note + 12, c, 'scale'));
+      expect(mapPlayNote(note, c, 'scale', -1)).toBe(mapPlayNote(note - 12, c, 'scale'));
+    }
+  });
+
+  it('never runs backwards across the keybed', () => {
+    // Snapping folds neighbours together, so two keys can share a pitch — but
+    // a key to the right must never sound lower than one to its left.
+    for (const [name] of Object.entries(MODE_SCALES)) {
+      const c = ctx(name, 62);
+      let previous = -1;
+      for (let note = 36; note <= 96; note++) {
+        const sounded = mapPlayNote(note, c, 'scale');
+        expect(sounded, `${name} key ${note}`).toBeGreaterThanOrEqual(previous);
+        previous = sounded;
+      }
+    }
+  });
+
+  it('resolves an ambiguous accidental downward', () => {
+    // susWash leaves a minor third between its 2 and its 5, so the note in
+    // the middle is equidistant. Down is the tie-break, so the black key
+    // falls back onto the white key it is drawn beside.
+    const c = ctx('susWash', 60);
+    expect(snapOffset(63, c)).toBe(-1);
+    expect(mapPlayNote(63, c, 'scale')).toBe(62);
   });
 
   it('clamps extreme octave shifts into MIDI range', () => {
@@ -108,6 +134,8 @@ describe('PlayMapping', () => {
   it('survives an empty scale', () => {
     const c = { scale: [], rootMidi: 60 } as unknown as HarmonicContext;
     expect(mapPlayNote(64, c, 'scale')).toBe(64);
+    expect(snapOffset(64, c)).toBe(0);
+    expect(isInScale(64, c)).toBe(true);
   });
 
   it('names notes the way Tone reads them', () => {
@@ -117,17 +145,38 @@ describe('PlayMapping', () => {
   });
 });
 
+describe('isInScale', () => {
+  it('agrees with the mapper about which keys are left alone', () => {
+    // What the keyboard dims and what the mapper moves have to be the same
+    // set, or the panel is drawing a different instrument from the one that
+    // sounds.
+    for (const [name] of Object.entries(MODE_SCALES)) {
+      const c = ctx(name, 41);
+      for (let note = 36; note <= 96; note++) {
+        expect(isInScale(note, c), `${name} key ${note}`).toBe(
+          mapPlayNote(note, c, 'scale') === note,
+        );
+      }
+    }
+  });
+
+  it('is octave-blind', () => {
+    const c = ctx('pentatonic', 60);
+    expect(isInScale(60, c)).toBe(true);
+    expect(isInScale(72, c)).toBe(true);
+    expect(isInScale(61, c)).toBe(false);
+  });
+});
+
 describe('degreeForSounded', () => {
   it('reads back the degree a scale-tuned key sounded', () => {
-    // The round trip that matters: what the ensemble hears has to be the
-    // degree the keybed just played. The white keys from middle C up walk
-    // the scale in order, so their ordinal is the degree they should map to.
     const c = ctx('lydian');
-    const whiteKeys = [60, 62, 64, 65, 67, 69, 71];
-    for (const [degree, key] of whiteKeys.entries()) {
-      expect(isBlackKey(key)).toBe(false);
+    // Every degree of the mode, played where it actually lies on the keybed.
+    MODE_SCALES.lydian!.forEach((semitone, degree) => {
+      const key = 60 + semitone;
+      expect(mapPlayNote(key, c, 'scale')).toBe(key);
       expect(degreeForSounded(mapPlayNote(key, c, 'scale'), c)).toBe(degree);
-    }
+    });
   });
 
   it('is octave-blind — the same pitch class is the same degree', () => {
@@ -140,7 +189,8 @@ describe('degreeForSounded', () => {
 
   it('snaps a chromatic passing tone to the degree it passed', () => {
     // Pentatonic leaves a real gap above its third degree, so the semitone
-    // above it is unambiguously nearer the degree it came from.
+    // above it is unambiguously nearer the degree it came from. Chromatic
+    // tuning is where this still happens — scale tuning never sounds one.
     const c = ctx('pentatonic');
     const degree = c.rootMidi + c.scale[2]!;
     expect(degreeForSounded(degree + 1, c)).toBe(2);
@@ -149,5 +199,13 @@ describe('degreeForSounded', () => {
   it('survives an empty scale', () => {
     const c = { scale: [], rootMidi: 60 } as unknown as HarmonicContext;
     expect(degreeForSounded(64, c)).toBe(0);
+  });
+});
+
+describe('isBlackKey', () => {
+  it('knows the five black keys of an octave', () => {
+    const black = [61, 63, 66, 68, 70].map((n) => isBlackKey(n));
+    expect(black.every(Boolean)).toBe(true);
+    expect([60, 62, 64, 65, 67, 69, 71].some((n) => isBlackKey(n))).toBe(false);
   });
 });
