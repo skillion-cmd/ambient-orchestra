@@ -2,7 +2,7 @@ import type { HarmonicContext } from '../audio/types';
 import { PLAY_BLENDS, type PlayBlendId, type PlayVoiceMode } from '../audio/PlayBlend';
 import { KIT_LABELS, KIT_LAYOUT, kitPieceFor } from '../audio/PlayKit';
 import type { PlayTuning } from '../audio/PlayMapping';
-import { isBlackKey, midiToNoteName } from '../audio/PlayMapping';
+import { isBlackKey, isInScale, mapPlayNote, midiToNoteName } from '../audio/PlayMapping';
 import { PLAY_PRESETS } from '../audio/PlayPresets';
 import { GESTURE_LABELS, GESTURE_ORDER, KNOB_ORDER } from '../input/MidiMap';
 import type { MidiStatus } from '../input/MidiInput';
@@ -81,6 +81,10 @@ export class PlayPanel {
   private lastKeyLine = '';
   private lastNoteLine = '';
   private lastFollowLine = '';
+  /** The live field, so the caps can say what they will sound. */
+  private harmonic: HarmonicContext | null = null;
+  /** Everything the caps depend on, so the relabel runs on change, not on frame. */
+  private lastCapSignature = '';
 
   constructor(
     initial: PlayPanelState,
@@ -174,8 +178,9 @@ export class PlayPanel {
     // has to be held onto before the call to have something to swap out.
     const previous = this.keyboard;
     previous.replaceWith(this.buildKeyboard());
-    // The caps carry their kit labels in Beat mode, and the fresh ones do not
-    // have them yet.
+    // The fresh caps are blank — they have neither their kit labels nor their
+    // pitches yet, and the signature still matches the row that just went.
+    this.lastCapSignature = '';
     this.syncVoiceMode();
   }
 
@@ -210,11 +215,13 @@ export class PlayPanel {
   setTuning(tuning: PlayTuning): void {
     this.state.tuning = tuning;
     this.syncTuning();
+    this.syncKeyCaps();
   }
 
   setOctave(shift: number): void {
     this.state.octaveShift = shift;
     this.syncOctave();
+    this.syncKeyCaps();
   }
 
   setLearning(target: string | null): void {
@@ -244,12 +251,15 @@ export class PlayPanel {
       element.classList.toggle('is-held', held.has(note));
     }
 
+    this.harmonic = harmonic;
+    this.syncKeyCaps();
+
     const keyText =
       this.state.voiceMode === 'beat'
         ? `${harmonic.root} ${harmonic.mode} — the kit is tuned to it`
         : this.state.tuning === 'scale'
-          ? `${harmonic.root} ${harmonic.mode} — keys follow the field`
-          : `${harmonic.root} ${harmonic.mode} — chromatic`;
+          ? `${harmonic.root} ${harmonic.mode} — dimmed keys fall in`
+          : `${harmonic.root} ${harmonic.mode} — every key sounds itself`;
     if (keyText !== this.lastKeyLine) {
       this.keyLine.textContent = keyText;
       this.lastKeyLine = keyText;
@@ -362,17 +372,69 @@ export class PlayPanel {
     this.octaveRow.hidden = beat;
     this.kitLegend.hidden = !beat;
     this.element.classList.toggle('is-beat', beat);
-    // The on-screen keys say what they do in each mode: a pitch when they
-    // are pitched, a drum when they are drums. The white caps say it out
-    // loud — a kit is a layout you learn by looking at it once, and playing
-    // one from a legend above the keys means reading instead of playing.
+    this.syncKeyCaps();
+  }
+
+  /**
+   * Write on each cap what that key will actually do.
+   *
+   * In Beat that is a kit piece — a layout you learn by looking at it once,
+   * and playing one from a legend above the keys means reading instead of
+   * playing. In Melody it is a pitch, and it has to be the pitch that will
+   * *sound*, not the one the key is drawn as. Those used to be different
+   * things: scale tuning walked the white keys through the scale degrees, so
+   * under a picture of a piano the B♭ key could sound a G. A drawn keyboard
+   * is a promise about which note is under your finger, and it was being
+   * broken silently — the one failure a player never debugs, because they
+   * assume they misread their own hands.
+   *
+   * They agree now. The keys that fall outside the field's key are the only
+   * ones left to explain, and they explain themselves: drawn recessed, and
+   * in scale tuning captioned with the neighbour they resolve onto.
+   */
+  private syncKeyCaps(): void {
+    const beat = this.state.voiceMode === 'beat';
+    const ctx = this.harmonic;
+    // Cheap enough to run per frame only because it almost never does any
+    // work: the field's key changes on a movement, not on a frame.
+    const signature = beat
+      ? 'beat'
+      : `${ctx?.rootMidi ?? '-'}|${ctx?.scale.join(',') ?? '-'}|${ctx?.root ?? '-'}` +
+        `|${ctx?.mode ?? '-'}|${this.state.tuning}|${this.state.octaveShift}`;
+    if (signature === this.lastCapSignature) return;
+    this.lastCapSignature = signature;
+
     for (const [note, key] of this.keyElements) {
-      const piece = KIT_LABELS[kitPieceFor(note)];
-      key.setAttribute('aria-label', beat ? piece : midiToNoteName(note));
-      key.title = beat ? piece : '';
-      if (!key.classList.contains('is-black')) {
-        key.textContent = beat ? piece : '';
+      if (beat) {
+        const piece = KIT_LABELS[kitPieceFor(note)];
+        key.setAttribute('aria-label', piece);
+        key.title = piece;
+        key.classList.remove('is-outside');
+        if (!key.classList.contains('is-black')) key.textContent = piece;
+        continue;
       }
+
+      // The octave stepper transposes the whole keybed, so the key's own
+      // identity moves with it — an on-screen C at Octave +1 is a C5.
+      const drawn = midiToNoteName(note + this.state.octaveShift * 12);
+      const sounded = ctx
+        ? midiToNoteName(
+            mapPlayNote(note, ctx, this.state.tuning, this.state.octaveShift),
+          )
+        : drawn;
+      const outside = ctx ? !isInScale(note + this.state.octaveShift * 12, ctx) : false;
+
+      key.classList.toggle('is-outside', outside);
+      const caption = !outside
+        ? drawn
+        : sounded === drawn
+          ? `${drawn} — outside ${ctx!.root} ${ctx!.mode}`
+          : `${drawn} — outside ${ctx!.root} ${ctx!.mode}, sounds ${sounded}`;
+      key.setAttribute('aria-label', caption);
+      key.title = caption;
+      // The cap itself carries the sounding pitch, so what is written on the
+      // instrument is true even for the keys that resolve onto a neighbour.
+      if (!key.classList.contains('is-black')) key.textContent = sounded;
     }
   }
 
@@ -398,10 +460,15 @@ export class PlayPanel {
   private buildTuningRow(): HTMLElement {
     const row = document.createElement('div');
     row.className = 'play-row play-tuning';
+    const hints: Record<PlayTuning, string> = {
+      scale: 'keys outside the field’s key fall onto the nearest note inside it',
+      chromatic: 'every key sounds its own pitch — staying in key is on you',
+    };
     for (const tuning of ['scale', 'chromatic'] as PlayTuning[]) {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = tuning === 'scale' ? 'In key' : 'Chromatic';
+      button.title = hints[tuning];
       button.addEventListener('click', () => {
         this.state.tuning = tuning;
         this.syncTuning();

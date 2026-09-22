@@ -76,10 +76,19 @@ Flows that matter:
   below works headless:
   - Notes: `page.keyboard.down('a')` etc. on the tracker layout (`a s d f g
     h j k l ;` white, `w e t y u o p` black, `z`/`x` octave). `.play-notes`
-    reports the *sounded* pitches, which in the default in-key tuning are
-    not the keys pressed — `a d g j` in G lydian gives `G4 B4 D5 F#5`.
+    reports the *sounded* pitches. In the default chromatic tuning those are
+    the keys pressed — `a s d f g` gives `C4 D4 E4 F4 G4` in any key. In
+    In-key they differ only for the keys outside the field's key: in G
+    lydian `a` (C4) sounds `B3`, everything else in the scale sounds itself.
   - `.play-key-cap.is-held` counts the lit keys on the on-screen keyboard;
     the caps themselves are clickable via `pointerdown` / `pointerup`.
+  - Each white cap's `textContent` is the pitch that key will sound and its
+    `title` is the full story (`C4 — outside G lydian, sounds B3`). That is
+    the assertion worth making about the keybed: strike each white key
+    through `getPlayInstrument().noteOn` and compare `getSoundingNotes()`
+    against the cap's own text — they have to match for all fifteen, in both
+    tunings. Keys outside the field's key carry `is-outside` in either
+    tuning; `.play-key` sums it up (`G lydian — every key sounds itself`).
   - The ensemble duck shows as `.play-notes.is-ducked`, and the line reads
     `orchestra held back` while it is still leaning away — a few seconds
     after the last note-off, since the duck follows play energy and that
@@ -145,9 +154,11 @@ To hear one thing at a time, zero `melodyBus`/`padBus`/`airBus`/`subBus`/
 `(dB + 100) / 100`, so silence reads as a large constant, not zero. Only
 differences from a measured floor mean anything, and a 14s reverb tail keeps
 that floor moving for a while after you stop.
-  - Scale tuning voices two octaves above `rootMidi` (the field's *bass*),
-    which keeps it within an octave of chromatic on the same key. If a change
-    makes those two jump apart, that lift is what moved.
+  - Neither tuning transposes: a key sounds in the octave it was played in,
+    so the tuning toggle changes which notes are reachable and never which
+    register your hands are standing in. If flipping it moves the pitch by
+    more than a semitone on a key that is in the scale, the mapper has gone
+    back to walking degrees.
 
 Two shapes of scheduling bug live here, and they fail in different places:
 

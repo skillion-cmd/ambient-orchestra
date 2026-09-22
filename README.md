@@ -34,10 +34,13 @@ Inspired by the idea that good ambient music flows in and out of interest within
 A third mode beside Drift and Calibrate. The same voices, the same harmonic
 field, the same room, but with a polyphonic instrument at the front of it.
 
-- **Plays in the key the piece is already in** — the white keys walk the current
-  scale degrees, so the layout follows the harmonic field as it drifts and
-  nothing you play is out of key. Black keys are the passing tones between
-  degrees. A **Chromatic** toggle gives a literal keyboard instead
+- **A keyboard that means what it says** — every key sounds the pitch written
+  on it, because the panel draws a piano and a drawn piano is a promise about
+  which note is under your finger. An **In key** toggle keeps you inside the
+  key the piece is already in: the handful of keys outside it fall onto the
+  nearest note inside, and the on-screen keyboard draws those recessed and
+  labels each with the note it lands on, so the aid is visible rather than a
+  keybed that has quietly slid out from under you
 - **Eight voices** — Glass, Choir, Bell, Crystal, Strings, Warm, Reed and Ghost,
   each a playable reading of a voice the orchestra already has. Same timbres,
   performance envelopes: the generative versions open over two to six seconds,
@@ -184,7 +187,7 @@ Two edge rails frame an open center, each pairing live data with the knobs that 
 - **Top centre — what you are looking at:** the Ink / Currents / Resonance switch and the light / dark field toggle, mirroring Drift / Calibrate / Play at the bottom. Outside the rails, so both stay reachable in Drift
 - **10 knobs** — six sound, four vision (see below)
 - **Piece picker (Calibrate only)** — choose a length and a world and play that piece now, instead of waiting for two weighted draws to agree. Drift keeps its unpredictability; direct control belongs to Calibrate
-- **Play stage (Play only)** — the instrument stands in the middle of the screen, above the mode switch and clear of both rails: Melody / Beat, connected controller, eight voices (or the black-key kit legend), the in-key / chromatic toggle, octave, blend, the field's live key, what is sounding in full size, and a keyboard wide enough to hit. The rails keep what they are for — the engine, and the knobs that steer it
+- **Play stage (Play only)** — the instrument stands in the middle of the screen, above the mode switch and clear of both rails: Melody / Beat, connected controller, eight voices (or the black-key kit legend), the in-key / chromatic toggle, octave, blend, the field's live key, what is sounding in full size, and a keyboard wide enough to hit, every cap carrying the pitch it will sound. The rails keep what they are for — the engine, and the knobs that steer it
 - **Knob automator** — slow, phrase-aligned autonomous drift when you leave the controls alone
 - **PerfMonitor** — a dev-only health gate (press **D**) reporting frame rate, audio-context health, console errors, and heap growth
 - **Error overlay** — a clear message if WebGL or audio fails to start

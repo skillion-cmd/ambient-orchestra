@@ -49,7 +49,7 @@ export class PlayInstrument {
   private readonly chordGain: Tone.Gain;
   private lastChordTrim = 1;
   private readonly filter: Tone.Filter;
-  private tuning: PlayTuning = 'scale';
+  private tuning: PlayTuning = 'chromatic';
   private octaveShift = 0;
   private ctx: HarmonicContext | null = null;
   private sustaining = false;
@@ -122,8 +122,8 @@ export class PlayInstrument {
   }
 
   /** What is actually sounding — the mapped pitches, not the keys pressed.
-   * In scale tuning those are different things, and the readout should show
-   * what you are hearing. */
+   * In scale tuning a key outside the field's key resolves onto a neighbour,
+   * so the two can still differ, and the readout should show what you hear. */
   getSoundingNotes(): string[] {
     return [...this.held.entries()]
       .sort((a, b) => a[0] - b[0])

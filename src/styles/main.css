@@ -970,11 +970,41 @@ body[data-mode='calibrate'] .play-stage {
   border-color: color-mix(in srgb, var(--ao-text) 62%, transparent);
 }
 
+/* Outside the key the field is currently in. Recessed rather than hidden or
+   disabled: in Chromatic the key still plays its own pitch and you may well
+   want it, and in In-key it still plays — it just resolves onto the
+   neighbour its cap names.
+   On a white cap the label carries it and the key itself is left alone: a
+   white cap is mostly its outline and its fill, and lightening those does
+   not read as "further back" — it reads as a hole in the keybed, and the
+   five of them chop the row into four boxes that look like four separate
+   instruments. The black caps have a fill of their own to dim instead, so
+   they can take the move properly. */
+.play-key-cap.is-outside {
+  color: color-mix(in srgb, var(--ao-text-muted) 40%, transparent);
+}
+
+.play-key-cap.is-black.is-outside {
+  background: color-mix(in srgb, var(--ao-text) 30%, var(--ao-overlay));
+  border-color: color-mix(in srgb, var(--ao-text) 30%, transparent);
+}
+
 .play-key-cap.is-held {
   background: color-mix(in srgb, var(--ao-text) 34%, transparent);
 }
 
 .play-key-cap.is-black.is-held {
+  background: var(--ao-text);
+}
+
+/* Held wins over out-of-key — a key under a finger has to light up whether
+   or not the field approves of it, and its label has to stay readable while
+   you are looking at where the note went. */
+.play-key-cap.is-outside.is-held {
+  color: var(--ao-text-muted);
+}
+
+.play-key-cap.is-black.is-outside.is-held {
   background: var(--ao-text);
 }
 
