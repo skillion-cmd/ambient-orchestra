@@ -33,6 +33,26 @@ const VOICE_PANS: Record<string, number> = {
   granularTexture: 0,
 };
 
+/**
+ * How a voice's output is closed once its fade-out is done.
+ *
+ * `onExit` stops oscillators and noise sources outright and disposes the
+ * rest, so whatever level the output is at in that instant is cut to nothing
+ * in one sample — a click, and at a transition, where half a dozen voices
+ * leave together, a burst of them that reads as static. Measured at the
+ * destination, voices were reaching `onExit` with their output still at
+ * -25 to -40dB. So the output is ramped to zero first, and the nodes are only
+ * torn down once the ramp has had time to land.
+ *
+ * "Time to land" has to include the scheduler's lookahead: `rampTo` starts
+ * at `Tone.now()`, which is the audio clock *plus* the lookahead (a quarter
+ * of a second in Drift), while `onExit` stops and disconnects right now. A
+ * hold shorter than the lookahead tears the voice down before its closing
+ * ramp has even begun.
+ */
+const CLOSE_RAMP_SEC = 0.12;
+const CLOSE_MARGIN_SEC = 0.08;
+
 export abstract class VoiceBase {
   protected state: VoiceState = 'dormant';
   protected level = 0;
@@ -57,6 +77,9 @@ export abstract class VoiceBase {
   /** Nodes awaiting deferred dispose — torn down immediately on re-enter */
   private pendingDisposeNodes: Tone.ToneAudioNode[] = [];
   private lastOutputLevel = -1;
+  /** Seconds left before a finished fade-out may tear its nodes down; 0 while
+   * not closing — see `CLOSE_RAMP_SEC`. */
+  private closingIn = 0;
   private lastFilterFreq = -1;
   private panOffset = 0;
   private currentWidth = 1;
@@ -208,11 +231,26 @@ export abstract class VoiceBase {
         this.state = 'sustaining';
       }
     } else if (this.state === 'fadingOut') {
-      this.level -= this.fadeSpeed * 0.6 * dt * 60;
-      if (this.level <= 0.001) {
-        this.level = 0;
-        this.state = 'dormant';
-        this.onExit();
+      if (this.closingIn > 0) {
+        this.closingIn -= dt;
+        if (this.closingIn <= 0) {
+          this.closingIn = 0;
+          this.state = 'dormant';
+          this.onExit();
+        }
+      } else {
+        this.level -= this.fadeSpeed * 0.6 * dt * 60;
+        if (this.level <= 0.001) {
+          // The fade has reached zero, but the output gain has not: it runs
+          // a ramp behind `level`, and the write below skips moves under
+          // 0.006, so the last value it was sent may not be zero either.
+          // Close it explicitly and wait for that to land before `onExit`
+          // stops oscillators and noise sources outright.
+          this.level = 0;
+          this.lastOutputLevel = 0;
+          this.output.gain.rampTo(0, CLOSE_RAMP_SEC);
+          this.closingIn = Tone.getContext().lookAhead + CLOSE_RAMP_SEC + CLOSE_MARGIN_SEC;
+        }
       }
     }
 
@@ -267,6 +305,7 @@ export abstract class VoiceBase {
   revive(): boolean {
     if (this.state !== 'fadingOut') return false;
     this.state = 'fadingIn';
+    this.closingIn = 0;
     this.targetLevel = this.maxGain;
     return true;
   }

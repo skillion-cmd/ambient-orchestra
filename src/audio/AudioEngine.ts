@@ -938,6 +938,11 @@ export class AudioEngine {
     this.masterBus.gain.setValueAtTime(this.masterBus.gain.value, now);
     this.masterBus.gain.linearRampToValueAtTime(this.gestureGain(0.55), now + 0.75);
     this.masterBus.gain.linearRampToValueAtTime(this.baseMasterGain, now + 1.1);
+    // A ramp runs from the previous automation event, not from now — and the
+    // previous one on this filter may be the last inhale, minutes ago, which
+    // puts most of the sweep in the past and lands the cutoff at ~140Hz in a
+    // single sample. Holding the current value here is what makes it a sweep.
+    this.highpass.frequency.cancelAndHoldAtTime(now);
     this.highpass.frequency.linearRampToValueAtTime(140, now + 0.5);
     this.highpass.frequency.linearRampToValueAtTime(90, now + 1.2);
   }
@@ -952,13 +957,18 @@ export class AudioEngine {
       Math.min(0.62, this.delayFeedbackBase() + 0.28 + space * 0.12),
       now + 0.4,
     );
+    // Held first for the same reason as the inhale's highpass: unanchored,
+    // the wet mix jumps rather than swells.
+    this.reverb.wet.cancelAndHoldAtTime(now);
     this.reverb.wet.linearRampToValueAtTime(
       Math.min(0.72, this.baseReverbWet + 0.22 + space * 0.1),
       now + 0.5,
     );
     this.spaceThrowTimeout = setTimeout(() => {
       const t = Tone.now();
+      this.delay.feedback.cancelAndHoldAtTime(t);
       this.delay.feedback.linearRampToValueAtTime(this.delayFeedbackBase(), t + 1.5);
+      this.reverb.wet.cancelAndHoldAtTime(t);
       this.reverb.wet.linearRampToValueAtTime(
         0.2 + this.knobs.sound.space * 0.5,
         t + 1.8,
