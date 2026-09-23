@@ -98,7 +98,8 @@ export function planSteals(
 
 /**
  * Attack `notes` on `synth`, re-striking held voices for whatever does not
- * fit in the free ones. Call it after `releaseAll()`, at a time from the
+ * fit in the free ones. Call it after `releaseAll()` (or, for a keyboard, on
+ * any note-on — released tails are taken before held notes), at a time from the
  * voice's own `ScheduleTime` — that is what guarantees a re-struck voice is
  * started strictly after it last was, which Tone asserts.
  */
@@ -114,8 +115,11 @@ export function attackWithSteal<V extends AnyVoice>(
   // A voice whose release has already run out is about to be handed back by
   // PolySynth itself, and re-striking it would race that hand-back — it could
   // then be given to a second note while still playing this one. Only voices
-  // still audibly on their way out are stealable.
-  const candidates = poly._activeVoices.filter((v) => v.voice.getLevelAtTime(time) > 1e-4);
+  // still audibly on their way out are stealable. Released voices go ahead of
+  // held ones, each group oldest first, so a note still under a finger (play
+  // mode) is only taken when every tail has already been used.
+  const audible = poly._activeVoices.filter((v) => v.voice.getLevelAtTime(time) > 1e-4);
+  const candidates = [...audible.filter((v) => v.released), ...audible.filter((v) => !v.released)];
   const { steals, fresh } = planSteals(
     candidates.map((v) => v.midi),
     free,
