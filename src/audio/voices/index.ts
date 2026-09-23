@@ -48,8 +48,7 @@ export class HarmonyBed extends VoiceBase {
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
-    this.synth.releaseAll();
-    this.synth.triggerAttack(this.fullVoicing(ctx), this.atAfter(0.5), 0.11);
+    this.restrike(this.synth, this.fullVoicing(ctx), this.atAfter(0.5), 0.11);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
@@ -270,8 +269,7 @@ export class WarmPad extends VoiceBase {
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
-    this.synth.releaseAll();
-    this.synth.triggerAttack(this.getChordNotes(ctx, 0), this.atAfter(1), 0.12);
+    this.restrike(this.synth, this.getChordNotes(ctx, 0), this.atAfter(1), 0.12);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
@@ -315,9 +313,8 @@ export class GlassPad extends VoiceBase {
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
-    this.synth.releaseAll();
     const notes = ctx.chordDegrees.map((d) => this.noteAt(ctx, d, 2));
-    this.synth.triggerAttack(notes, this.atAfter(0.8), 0.14);
+    this.restrike(this.synth, notes, this.atAfter(0.8), 0.14);
   }
 
   onUpdate(): void {}
@@ -426,8 +423,7 @@ export class TapeChoir extends VoiceBase {
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
-    this.synth.releaseAll();
-    this.synth.triggerAttack(this.fullVoicing(ctx), this.atAfter(1.2), 0.11);
+    this.restrike(this.synth, this.fullVoicing(ctx), this.atAfter(1.2), 0.11);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
@@ -477,8 +473,7 @@ export class ModalStrings extends VoiceBase {
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
-    this.synth.releaseAll();
-    this.synth.triggerAttack(this.getChordNotes(ctx, 0), this.atAfter(0.6), 0.16);
+    this.restrike(this.synth, this.getChordNotes(ctx, 0), this.atAfter(0.6), 0.16);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {
@@ -518,10 +513,9 @@ export class CrystalCluster extends VoiceBase {
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
-    this.synth.releaseAll();
     const hookLen = Math.min(4, ctx.melodyDegrees.length);
     const notes = ctx.melodyDegrees.slice(0, hookLen).map((d) => this.noteAt(ctx, d, 2));
-    this.synth.triggerAttack(notes, this.atAfter(0.5), 0.08);
+    this.restrike(this.synth, notes, this.atAfter(0.5), 0.08);
   }
 
   onUpdate(): void {}
@@ -651,9 +645,8 @@ export class HarmonicGhost extends VoiceBase {
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
-    this.synth.releaseAll();
     const notes = ctx.chordDegrees.slice(0, 2).map((d) => this.noteAt(ctx, d, 1));
-    this.synth.triggerAttack(notes, this.atAfter(0.7), 0.12);
+    this.restrike(this.synth, notes, this.atAfter(0.7), 0.12);
   }
 
   onUpdate(): void {}
@@ -745,8 +738,7 @@ export class OrchestraWhole extends VoiceBase {
 
   onHarmonicShift(ctx: HarmonicContext): void {
     if (!this.synth) return;
-    this.synth.releaseAll();
-    this.synth.triggerAttack(this.fullVoicing(ctx), this.atAfter(2), 0.1);
+    this.restrike(this.synth, this.fullVoicing(ctx), this.atAfter(2), 0.1);
   }
 
   onEnsembleCue(ctx: HarmonicContext): void {

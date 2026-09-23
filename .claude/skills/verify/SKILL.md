@@ -178,6 +178,22 @@ pulse limiter has been seen reporting −13dB of gain reduction while its input
 and output peaks matched to three decimals. Measure a limiter by tapping both
 sides, never by reading `reduction`.
 
+Every limiter is a `Limiter` from `Ceiling.ts`, not a bare compressor:
+a DynamicsCompressorNode always applies makeup gain (+1dB at -2, +3.3dB at
+-6, +4.4dB at -8), and `Limiter` takes it back off after the compressor so
+the threshold is the ceiling. To check a limiter, tap its input and output
+with an AudioWorklet (`tctx.addAudioWorkletModule` +
+`tctx.createAudioWorkletNode` on `window.__ao.limiter.context` — Tone only
+loads *one* worklet module per context, so put every processor you need in
+it) and delay the input by the compressor's 6ms pre-delay before comparing,
+or every drum onset reads as a deep dip that is not there.
+
+Count `Max polyphony exceeded. Note dropped.` warnings on any long run
+(`page.on('console')`). They are Tone dropping pad notes at a re-strike, which
+is heard as the harmony thinning out; `restrike` / `attackWithSteal` exist to
+keep that near zero. `?character=night&pulse=kit` for 90s is a fair test —
+it was 42 before stealing, and 1 after.
+
 `engine.update(dt)` can be called directly, and calling it many times in one
 `page.evaluate` reproduces exactly what `clockStep` does after a stall: several
 engine sub-steps in one JavaScript turn, all reading the same `Tone.now()`.

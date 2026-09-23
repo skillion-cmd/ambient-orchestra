@@ -7,7 +7,7 @@ import { DEFAULT_KNOBS } from './types';
 import { NEUTRAL_PRESENCE, type LayerPresence } from './LayerPresence';
 import type { ConductorDirectives } from './ConductorSkill';
 import type { PieceRequest } from './HarmonicField';
-import { createCeiling, createLimiter } from './Ceiling';
+import { createCeiling, createLimiter, type Limiter } from './Ceiling';
 import { RoomWalk } from './RoomWalk';
 import { NeighbourRoom } from './NeighbourRoom';
 import { PlayInstrument } from './PlayInstrument';
@@ -130,11 +130,11 @@ export class AudioEngine {
   /** Movement index whose end-of-piece crossing has already been cued. */
   private forcedForMovement = -1;
   private readonly playBus: Tone.Gain;
-  private readonly playLimiter: Tone.Compressor;
+  private readonly playLimiter: Limiter;
   private readonly playInstrument: PlayInstrument;
   /** The kit under your hands in Beat mode — its own dry path, see below. */
   private readonly playKitBus: Tone.Gain;
-  private readonly playKitLimiter: Tone.Compressor;
+  private readonly playKitLimiter: Limiter;
   private readonly playKitSend: Tone.Gain;
   private readonly playKit: PlayKit;
   private voiceMode: PlayVoiceMode = DEFAULT_VOICE_MODE;
@@ -170,11 +170,11 @@ export class AudioEngine {
   /** Instrument bus level as of the last write — see `applyPlayLevel`. */
   private lastPlayLevel = -1;
   private readonly analyser: Tone.Analyser;
-  private readonly limiter: Tone.Compressor;
+  private readonly limiter: Limiter;
   /** The static ceiling after the limiter — see `createCeiling`. */
   private readonly ceiling: Tone.WaveShaper;
-  private readonly subLimiter: Tone.Compressor;
-  private readonly pulseLimiter: Tone.Compressor;
+  private readonly subLimiter: Limiter;
+  private readonly pulseLimiter: Limiter;
   private readonly voices;
   readonly conductor: Conductor;
   private knobs: AppKnobs = {

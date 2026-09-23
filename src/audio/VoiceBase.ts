@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { attackWithSteal, type AnyVoice } from './PolyVoices';
 import { ScheduleTime } from './ScheduleTime';
 import { chordNotes, currentMelodyNote, noteFromDegree } from './HarmonicField';
 import type { HarmonicContext, SoundKnobs, VoiceState } from './types';
@@ -409,18 +410,34 @@ export abstract class VoiceBase {
     this.scheduleDispose([synth as unknown as Tone.ToneAudioNode, ...extras], delaySec);
   }
 
-  /** Re-articulate poly synth without stacking voices — prevents polyphony blowout */
-  protected ensembleAttack(
-    synth: {
-      releaseAll(time?: Tone.Unit.Time): unknown;
-      triggerAttack(notes: string[], time?: Tone.Unit.Time, velocity?: number): unknown;
-    } | null,
+  /**
+   * Re-strike a pad: release what is sounding and attack `notes` at `time`,
+   * the outgoing chord's release tail crossfading under the new attack.
+   *
+   * Through `attackWithSteal` rather than a bare `triggerAttack`: a release
+   * holds its voice for its whole length, so a re-strike needs twice the
+   * voicing in voices, and PolySynth drops what does not fit. See
+   * `PolyVoices`.
+   */
+  protected restrike<V extends AnyVoice>(
+    synth: Tone.PolySynth<V> | null,
     notes: string[],
+    time: number,
     velocity: number,
   ): void {
     if (!synth) return;
     synth.releaseAll();
-    synth.triggerAttack(notes, this.at(), velocity);
+    attackWithSteal(synth, notes, time, velocity);
+  }
+
+  /** Re-articulate with the ensemble, now — see `restrike`. */
+  protected ensembleAttack<V extends AnyVoice>(
+    synth: Tone.PolySynth<V> | null,
+    notes: string[],
+    velocity: number,
+  ): void {
+    if (!synth) return;
+    this.restrike(synth, notes, this.at(), velocity);
     this.sinceAttack = 0;
   }
 

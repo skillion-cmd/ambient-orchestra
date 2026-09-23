@@ -14,14 +14,14 @@
 export class ScopeCanvas {
   readonly element: HTMLCanvasElement;
   readonly ctx: CanvasRenderingContext2D;
-  private w: number;
+  /** 0 until the first `resize` — see the constructor. */
+  private w = 0;
 
   constructor(
     private readonly height: number,
     initialWidth: number,
     private readonly minWidth = 160,
   ) {
-    this.w = initialWidth;
     this.element = document.createElement('canvas');
     this.element.className = 'scope-canvas';
     // Decorative to a screen reader: everything it draws is also in the text
@@ -32,6 +32,13 @@ export class ScopeCanvas {
     const ctx = this.element.getContext('2d');
     if (!ctx) throw new Error('2D canvas unavailable');
     this.ctx = ctx;
+    // `w` starts at 0 so this first call always sizes the backing store. It
+    // used to start at `initialWidth`, which made this call a no-op (the
+    // width "hadn't changed", and a fresh canvas is already 300px wide) —
+    // so wherever the column really was 220px, which is every desktop rail,
+    // the observer never saw a change either, and the panel was drawn into
+    // the default 300×150 bitmap stretched to 220×182: text squeezed
+    // sideways, stretched upright, and the bottom row cut off.
     this.resize(initialWidth);
   }
 
