@@ -2,6 +2,7 @@ import * as Tone from 'tone';
 import { advanceEnergy, chordTrim, velocityCurve } from './PlayBlend';
 import { ScheduleTime } from './ScheduleTime';
 import { PlayIntent } from './PlayIntent';
+import { attackWithSteal } from './PolyVoices';
 import {
   degreeForSounded,
   mapPlayNote,
@@ -196,7 +197,11 @@ export class PlayInstrument {
     // moment of every added note is the un-compensated one.
     this.applyChordTrim();
     try {
-      synth.triggerAttack(note, this.schedule.next(), shaped);
+      // Every preset rings on for seconds after the key lifts, and PolySynth
+      // holds a voice for the whole tail and drops anything past the limit —
+      // a quick run would lose notes to tails nobody can hear any more. Take
+      // the oldest tail instead; see `PolyVoices`.
+      attackWithSteal(synth, [note], this.schedule.next(), shaped);
     } catch {
       this.held.delete(midiNote);
       this.intent.noteOff(midiNote);
