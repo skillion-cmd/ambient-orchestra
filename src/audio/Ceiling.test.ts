@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CEILING_PEAK, CEILING_TRANSPARENT_BELOW, ceilingCurve } from './Ceiling';
+import { CEILING_PEAK, CEILING_TRANSPARENT_BELOW, ceilingCurve, compressorMakeupGain } from './Ceiling';
 
 // The curve is what stands between the mix and a clipped destination, so the
 // properties worth pinning are the two it exists for: it does nothing to
@@ -50,5 +50,30 @@ describe('ceilingCurve', () => {
   it('keeps its knee under the threshold it is backing up', () => {
     expect(CEILING_TRANSPARENT_BELOW).toBeLessThan(CEILING_PEAK);
     expect(CEILING_PEAK).toBeLessThan(1);
+  });
+});
+
+// The browser's own makeup gain, reproduced so it can be taken back off. The
+// expected values are measured, not derived: a 200Hz sine through a native
+// DynamicsCompressorNode in Chrome at each of the engine's limiter settings.
+// If these drift, every limiter in the chain is either over or under its
+// threshold by the difference.
+describe('compressorMakeupGain', () => {
+  const makeupDb = (threshold: number) => 20 * Math.log10(compressorMakeupGain(threshold, 1, 20));
+
+  it('matches what Chrome adds at each limiter setting the engine uses', () => {
+    expect(makeupDb(-2)).toBeCloseTo(0.98, 1);
+    expect(makeupDb(-6)).toBeCloseTo(3.26, 1);
+    expect(makeupDb(-8)).toBeCloseTo(4.4, 1);
+  });
+
+  it('adds nothing when the threshold is at full scale', () => {
+    expect(makeupDb(0)).toBeCloseTo(0, 1);
+  });
+
+  it('matches it for a soft-kneed compressor too', () => {
+    // The glue's settings, measured the same way: -30dBFS in, -29.19 out.
+    const glue = 20 * Math.log10(compressorMakeupGain(-20, 30, 2));
+    expect(glue).toBeCloseTo(0.81, 1);
   });
 });
