@@ -49,3 +49,17 @@ export function stepAtTicks(ticks: number, ppq: number, totalSteps: number): num
   const step = Math.round(Math.max(0, ticks) / ticksPerStep(ppq));
   return ((step % totalSteps) + totalSteps) % totalSteps;
 }
+
+/**
+ * The step a tick count is *inside* — for a playhead, not for a hit.
+ *
+ * `stepAtTicks` rounds because it is handed event times that sit on a step
+ * boundary give or take a hair. A playhead is handed an arbitrary moment,
+ * and rounding that lights each step from halfway through the one before
+ * it — a sixteenth's worth of the grid running ahead of the sound.
+ */
+export function stepContainingTicks(ticks: number, ppq: number, totalSteps: number): number {
+  if (totalSteps <= 0) return 0;
+  const step = Math.floor(Math.max(0, ticks) / ticksPerStep(ppq));
+  return ((step % totalSteps) + totalSteps) % totalSteps;
+}

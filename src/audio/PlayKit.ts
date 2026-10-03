@@ -142,6 +142,14 @@ export class PlayKit {
   private crackleFilter: Tone.Filter | null = null;
   private built = false;
 
+  /**
+   * One clock per *synth*, not per piece. The two toms are one
+   * MembraneSynth at two pitches, so they have to share a clock: with one
+   * each, a step that has both toms written on it (or a two-key chord on G
+   * and A) started the same synth twice at the same instant, Tone threw
+   * "Start time must be strictly greater", and in the sequencer that throw
+   * took every hit after it in that step down with it.
+   */
   private readonly times = new Map<KitPieceId, ScheduleTime>();
   /** Physical keys currently down — the on-screen keyboard's lights. */
   private readonly held = new Set<number>();
@@ -155,6 +163,7 @@ export class PlayKit {
   constructor(destination: Tone.ToneAudioNode) {
     this.output = new Tone.Gain(1).connect(destination);
     for (const id of KIT_LAYOUT) this.times.set(id, new ScheduleTime());
+    this.times.set('tomMid', this.times.get('tomLow')!);
   }
 
   syncContext(ctx: HarmonicContext): void {

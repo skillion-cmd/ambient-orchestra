@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { barAtTicks, stepAtTicks, ticksPerBar, ticksPerStep } from './TransportGrid';
+import {
+  barAtTicks,
+  stepAtTicks,
+  stepContainingTicks,
+  ticksPerBar,
+  ticksPerStep,
+} from './TransportGrid';
 
 const PPQ = 192;
 
@@ -45,5 +51,22 @@ describe('stepAtTicks', () => {
     const step = ticksPerStep(PPQ);
     expect(stepAtTicks(step * 4 - 0.4, PPQ, total)).toBe(4);
     expect(stepAtTicks(step * 4 + 0.4, PPQ, total)).toBe(4);
+  });
+});
+
+describe('stepContainingTicks', () => {
+  const total = 32;
+  const step = ticksPerStep(PPQ);
+
+  it('holds a step for the whole of it, not just its first half', () => {
+    expect(stepContainingTicks(step * 4, PPQ, total)).toBe(4);
+    expect(stepContainingTicks(step * 4.6, PPQ, total)).toBe(4);
+    expect(stepContainingTicks(step * 5 - 0.01, PPQ, total)).toBe(4);
+    expect(stepContainingTicks(step * 5, PPQ, total)).toBe(5);
+  });
+
+  it('wraps at the end of the loop', () => {
+    expect(stepContainingTicks(step * 31.9, PPQ, total)).toBe(31);
+    expect(stepContainingTicks(step * 32.1, PPQ, total)).toBe(0);
   });
 });
