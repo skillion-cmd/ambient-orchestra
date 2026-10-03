@@ -6,7 +6,7 @@ import {
   type KitPattern,
 } from './KitPattern';
 import { KIT_LAYOUT, type PlayKit } from './PlayKit';
-import { stepAtTicks } from './TransportGrid';
+import { stepAtTicks, stepContainingTicks } from './TransportGrid';
 
 /**
  * The loop, playing.
@@ -80,8 +80,12 @@ export class KitSequencer {
   getDisplayStep(): number {
     if (!this.enabled) return -1;
     const transport = Tone.getTransport();
-    return stepAtTicks(
-      Number(transport.ticks),
+    // `transport.ticks` is where the scheduler has got to, which runs a
+    // lookahead ahead of the speakers. Ask for the ticks at the audio
+    // context's own clock instead — the moment actually being heard.
+    const heard = Tone.getContext().rawContext.currentTime;
+    return stepContainingTicks(
+      transport.getTicksAtTime(heard),
       transport.PPQ,
       patternSteps(this.pattern),
     );

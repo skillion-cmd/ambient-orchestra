@@ -500,9 +500,17 @@ export class AudioEngine {
    * lever, and switch knob ramps from slow glides to under-the-finger
    * response. Play additionally hands the front of the mix to the instrument. */
   setMode(mode: EngineMode): void {
+    const keysPlayed = this.effectiveVoiceMode();
     this.mode = mode;
     this.conductor.clock.steadyTempo = mode !== 'drift';
     this.applyLookAhead();
+    // Play to Kit (or back) keeps the play path open, so `setPlayActive`
+    // below releases nothing — but the keys have just changed what they
+    // play. A key held across the switch sends its note-off to the kit, and
+    // the chord it struck on the instrument hangs forever. The same goes for
+    // a chord the ensemble had taken: `updateFollow` stops reading the hands
+    // in Beat, so nothing would ever clear it.
+    if (this.effectiveVoiceMode() !== keysPlayed) this.releaseKeys();
     // Kit and Stage both put drums in front of the ensemble, so both want the
     // played kit's path open and the orchestra leaning away from it — the
     // same front-of-mix arrangement Play asks for.
@@ -555,7 +563,13 @@ export class AudioEngine {
    */
   setPlayVoiceMode(mode: PlayVoiceMode): void {
     if (mode === this.voiceMode) return;
+    const keysPlayed = this.effectiveVoiceMode();
     this.voiceMode = mode;
+    if (this.effectiveVoiceMode() !== keysPlayed) this.releaseKeys();
+  }
+
+  /** Let go of everything the keys were holding — see `setPlayVoiceMode`. */
+  private releaseKeys(): void {
     this.playInstrument.allNotesOff();
     this.playKit.allNotesOff();
     // A chord the ensemble had taken is not an instruction you are still
