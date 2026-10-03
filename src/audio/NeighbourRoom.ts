@@ -32,6 +32,8 @@ export class NeighbourRoom {
   private lastCutoff = -1;
   private lastGain = -1;
   private lastSend = -1;
+  /** Voices already reported as failing — see `guard`. */
+  private readonly reportedErrors = new Set<string>();
 
   /**
    * @param dryDest where the room's direct sound lands (the master bus)
@@ -73,8 +75,13 @@ export class NeighbourRoom {
     this.field.advance(dt, this.clock, knobs);
     const ctx = this.field.current(this.clock);
 
+    // Guarded per voice, as the Conductor guards its own. These are the same
+    // voice classes and they throw for the same reasons, but out here a throw
+    // escaped `AudioEngine.update` from inside `updateRooms` — so the
+    // instrument, the duck, the follow and a running Stage set all lost
+    // that step to a voice nobody can even hear clearly.
     for (const voice of this.voices) {
-      if (voice.isActive()) voice.syncContext(ctx);
+      if (voice.isActive()) this.guard(voice, () => voice.syncContext(ctx));
     }
 
     this.nextEventIn -= dt;
@@ -85,7 +92,18 @@ export class NeighbourRoom {
 
     // A steady middling interest — the neighbour has no gestures of its own
     // to swell for, and shouldn't compete with the room you're standing in.
-    for (const voice of this.voices) voice.update(dt, 0.45, knobs);
+    for (const voice of this.voices) this.guard(voice, () => voice.update(dt, 0.45, knobs));
+  }
+
+  /** Run one voice's step; report a failure once per voice and carry on. */
+  private guard(voice: VoiceBase, run: () => void): void {
+    try {
+      run();
+    } catch (err) {
+      if (this.reportedErrors.has(voice.id)) return;
+      this.reportedErrors.add(voice.id);
+      console.warn(`[neighbour] voice "${voice.id}" failed to update:`, err);
+    }
   }
 
   /** Apply how the room sounds from where the listener is standing. */
@@ -120,7 +138,8 @@ export class NeighbourRoom {
       active[Math.floor(Math.random() * active.length)]!.exit();
       return;
     }
-    dormant[Math.floor(Math.random() * dormant.length)]!.enter(ctx);
+    const pick = dormant[Math.floor(Math.random() * dormant.length)]!;
+    this.guard(pick, () => pick.enter(ctx));
   }
 
   dispose(): void {
