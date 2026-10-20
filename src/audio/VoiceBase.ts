@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
 import { attackWithSteal, type AnyVoice } from './PolyVoices';
+import { LeanPad } from './LeanPad';
 import { ScheduleTime } from './ScheduleTime';
 import { chordNotes, currentMelodyNote, noteFromDegree } from './HarmonicField';
 import type { HarmonicContext, SoundKnobs, VoiceState } from './types';
@@ -420,19 +421,21 @@ export abstract class VoiceBase {
    * `PolyVoices`.
    */
   protected restrike<V extends AnyVoice>(
-    synth: Tone.PolySynth<V> | null,
+    synth: Tone.PolySynth<V> | LeanPad | null,
     notes: string[],
     time: number,
     velocity: number,
   ): void {
     if (!synth) return;
     synth.releaseAll();
-    attackWithSteal(synth, notes, time, velocity);
+    // A LeanPad does its own stealing, by the same rule.
+    if (synth instanceof LeanPad) synth.triggerAttack(notes, time, velocity);
+    else attackWithSteal(synth, notes, time, velocity);
   }
 
   /** Re-articulate with the ensemble, now — see `restrike`. */
   protected ensembleAttack<V extends AnyVoice>(
-    synth: Tone.PolySynth<V> | null,
+    synth: Tone.PolySynth<V> | LeanPad | null,
     notes: string[],
     velocity: number,
   ): void {

@@ -5,13 +5,14 @@ import type { HarmonicContext, SoundKnobs } from '../types';
 import { euclidean, euclideanHit } from '../Euclidean';
 import { fitToStep, ScheduleTime } from '../ScheduleTime';
 import { VoiceBase } from '../VoiceBase';
+import { LeanPad } from '../LeanPad';
 
 type Bus = Tone.ToneAudioNode;
 
 /** Rich stacked chord bed — the harmonic foundation. Detuned saw ensemble
  * with a per-note filter swell for a bowed-string character. */
 export class HarmonyBed extends VoiceBase {
-  private synth: Tone.PolySynth<Tone.MonoSynth> | null = null;
+  private synth: LeanPad | null = null;
   private filter: Tone.Filter | null = null;
 
   constructor(dest: Bus) {
@@ -23,10 +24,11 @@ export class HarmonyBed extends VoiceBase {
   onEnter(ctx: HarmonicContext): void {
     this.clearPendingDispose();
     this.filter = new Tone.Filter(1100, 'lowpass').connect(this.output);
-    this.synth = new Tone.PolySynth(Tone.MonoSynth, {
-      oscillator: { type: 'fatsawtooth', spread: 26, count: 3 },
+    this.synth = new LeanPad({
+      spread: 26,
+      count: 3,
       envelope: { attack: 6, decay: 3, sustain: 0.75, release: 18 },
-      filter: { type: 'lowpass', rolloff: -12, Q: 1 },
+      Q: 1,
       filterEnvelope: {
         attack: 5,
         decay: 6,
@@ -35,8 +37,8 @@ export class HarmonyBed extends VoiceBase {
         baseFrequency: 220,
         octaves: 2.8,
       },
+      maxPolyphony: 10,
     }).connect(this.filter);
-    this.synth.maxPolyphony = 10;
     this.synth.triggerAttack(this.fullVoicing(ctx), this.at(), 0.13);
   }
 
@@ -238,7 +240,7 @@ export class DeepPressure extends VoiceBase {
 }
 
 export class WarmPad extends VoiceBase {
-  private synth: Tone.PolySynth<Tone.MonoSynth> | null = null;
+  private synth: LeanPad | null = null;
   private filter: Tone.Filter | null = null;
 
   constructor(dest: Bus) {
@@ -249,10 +251,11 @@ export class WarmPad extends VoiceBase {
   onEnter(ctx: HarmonicContext): void {
     this.clearPendingDispose();
     this.filter = new Tone.Filter(900, 'lowpass').connect(this.output);
-    this.synth = new Tone.PolySynth(Tone.MonoSynth, {
-      oscillator: { type: 'fatsawtooth', spread: 22, count: 3 },
+    this.synth = new LeanPad({
+      spread: 22,
+      count: 3,
       envelope: { attack: 4.5, decay: 2, sustain: 0.72, release: 14 },
-      filter: { type: 'lowpass', rolloff: -12, Q: 1 },
+      Q: 1,
       filterEnvelope: {
         attack: 4,
         decay: 5,
@@ -261,8 +264,8 @@ export class WarmPad extends VoiceBase {
         baseFrequency: 180,
         octaves: 2.4,
       },
+      maxPolyphony: 6,
     }).connect(this.filter);
-    this.synth.maxPolyphony = 6;
     const notes = this.getChordNotes(ctx, 0);
     this.synth.triggerAttack(notes, this.at(), 0.15);
   }
@@ -383,7 +386,7 @@ export class DistantBell extends VoiceBase {
 }
 
 export class TapeChoir extends VoiceBase {
-  private synth: Tone.PolySynth<Tone.MonoSynth> | null = null;
+  private synth: LeanPad | null = null;
   private filter: Tone.Filter | null = null;
   private wobblePhase = 0;
   private lastDetune = 0;
@@ -396,10 +399,11 @@ export class TapeChoir extends VoiceBase {
   onEnter(ctx: HarmonicContext): void {
     this.clearPendingDispose();
     this.filter = new Tone.Filter(1300, 'lowpass').connect(this.output);
-    this.synth = new Tone.PolySynth(Tone.MonoSynth, {
-      oscillator: { type: 'fatsawtooth', spread: 18, count: 3 },
+    this.synth = new LeanPad({
+      spread: 18,
+      count: 3,
       envelope: { attack: 5, decay: 2, sustain: 0.65, release: 16 },
-      filter: { type: 'lowpass', rolloff: -12, Q: 1 },
+      Q: 1,
       filterEnvelope: {
         attack: 4.5,
         decay: 5,
@@ -408,8 +412,8 @@ export class TapeChoir extends VoiceBase {
         baseFrequency: 260,
         octaves: 2.6,
       },
+      maxPolyphony: 6,
     }).connect(this.filter);
-    this.synth.maxPolyphony = 6;
     this.synth.triggerAttack(this.fullVoicing(ctx), this.at(), 0.13);
   }
 
@@ -437,7 +441,7 @@ export class TapeChoir extends VoiceBase {
     const entropyWobble = knobs.entropy * 10;
     const detune = Math.sin(this.wobblePhase) * (6 + entropyWobble);
     if (Math.abs(detune - this.lastDetune) > 0.4) {
-      this.synth.set({ detune });
+      this.synth.setDetune(detune);
       this.lastDetune = detune;
     }
   }
@@ -697,7 +701,7 @@ export class FieldRecording extends VoiceBase {
 }
 
 export class OrchestraWhole extends VoiceBase {
-  private synth: Tone.PolySynth<Tone.MonoSynth> | null = null;
+  private synth: LeanPad | null = null;
   private filter: Tone.Filter | null = null;
 
   constructor(dest: Bus) {
@@ -709,10 +713,11 @@ export class OrchestraWhole extends VoiceBase {
   onEnter(ctx: HarmonicContext): void {
     this.clearPendingDispose();
     this.filter = new Tone.Filter(1300, 'lowpass').connect(this.output);
-    this.synth = new Tone.PolySynth(Tone.MonoSynth, {
-      oscillator: { type: 'fatsawtooth', spread: 30, count: 3 },
+    this.synth = new LeanPad({
+      spread: 30,
+      count: 3,
       envelope: { attack: 6, decay: 2, sustain: 0.8, release: 20 },
-      filter: { type: 'lowpass', rolloff: -12, Q: 1 },
+      Q: 1,
       filterEnvelope: {
         attack: 5.5,
         decay: 6,
@@ -721,8 +726,8 @@ export class OrchestraWhole extends VoiceBase {
         baseFrequency: 200,
         octaves: 3.0,
       },
+      maxPolyphony: 14,
     }).connect(this.filter);
-    this.synth.maxPolyphony = 14;
     this.synth.triggerAttack(this.fullVoicing(ctx), this.at(), 0.12);
   }
 
